@@ -3,6 +3,14 @@
 
 import type { Project, Template, ProjectPage } from '@/types/backend';
 
+// Simulate network delay for realistic feel
+const simulateDelay = (ms: number = 300) =>
+  new Promise(resolve => setTimeout(resolve, ms));
+
+// Fixed IDs for demo projects (so they persist across reloads)
+const DEMO_PROJECT_1_ID = 'demo-project-1';
+const DEMO_PROJECT_2_ID = 'demo-project-2';
+
 // Generate unique IDs
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
@@ -271,7 +279,7 @@ const createDemoPages = (projectId: string): ProjectPage[] => {
 // Create demo projects
 export const demoProjects: Project[] = [
   {
-    id: generateId(),
+    id: DEMO_PROJECT_1_ID,
     name: 'My First Website',
     description: 'A beautiful website built with Website Builder',
     slug: 'my-first-website',
@@ -286,10 +294,10 @@ export const demoProjects: Project[] = [
     createdAt: new Date(),
     updatedAt: new Date(),
     ownerId: 'demo-user',
-    pages: createDemoPages('project-1'),
+    pages: createDemoPages(DEMO_PROJECT_1_ID),
   },
   {
-    id: generateId(),
+    id: DEMO_PROJECT_2_ID,
     name: 'Business Site',
     description: 'Professional business landing page',
     slug: 'business-site',
@@ -304,29 +312,35 @@ export const demoProjects: Project[] = [
     createdAt: new Date(),
     updatedAt: new Date(),
     ownerId: 'demo-user',
-    pages: createDemoPages('project-2'),
+    pages: createDemoPages(DEMO_PROJECT_2_ID),
   },
 ];
 
-// In-memory storage for demo projects (resets on page reload)
-let projects: Project[] = [...demoProjects];
-let projectCounter = projects.length;
+// In-memory storage for user-created projects (demo projects are separate)
+let projects: Project[] = [];
+let projectCounter = 100; // Start counter high to avoid ID conflicts
+
+// Helper to get all projects (demo + user-created, no duplicates)
+const getAllProjects = () => [
+  ...demoProjects,
+  ...projects.filter(p => !p.id.startsWith('demo-'))
+];
 
 // Mock API functions
 export const mockProjectsApi = {
   list: async (params?: { status?: string; page?: number; pageSize?: number }) => {
     await simulateDelay();
-    let filtered = [...projects];
-    
+    let filtered = getAllProjects();
+
     if (params?.status) {
       filtered = filtered.filter(p => p.status === params.status);
     }
-    
+
     const pageSize = params?.pageSize || 10;
     const page = params?.page || 1;
     const start = (page - 1) * pageSize;
     const end = start + pageSize;
-    
+
     return {
       success: true,
       data: {
@@ -341,7 +355,7 @@ export const mockProjectsApi = {
 
   getById: async (id: string) => {
     await simulateDelay();
-    const project = projects.find(p => p.id === id);
+    const project = getAllProjects().find(p => p.id === id);
     if (!project) {
       return { success: false, error: 'Project not found' };
     }
@@ -375,6 +389,10 @@ export const mockProjectsApi = {
 
   update: async (id: string, data: any) => {
     await simulateDelay();
+    // Demo projects cannot be modified
+    if (id.startsWith('demo-')) {
+      return { success: false, error: 'Demo projects cannot be modified' };
+    }
     const index = projects.findIndex(p => p.id === id);
     if (index === -1) {
       return { success: false, error: 'Project not found' };
@@ -385,6 +403,10 @@ export const mockProjectsApi = {
 
   delete: async (id: string) => {
     await simulateDelay();
+    // Demo projects cannot be deleted
+    if (id.startsWith('demo-')) {
+      return { success: false, error: 'Demo projects cannot be deleted' };
+    }
     const index = projects.findIndex(p => p.id === id);
     if (index === -1) {
       return { success: false, error: 'Project not found' };
@@ -427,7 +449,3 @@ export const mockTemplatesApi = {
     };
   },
 };
-
-// Simulate network delay for realistic feel
-const simulateDelay = (ms: number = 300) => 
-  new Promise(resolve => setTimeout(resolve, ms));
