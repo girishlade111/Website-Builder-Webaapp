@@ -1,5 +1,6 @@
-// API: Plugin Settings Update
-// PUT /api/projects/[id]/plugins/[pluginId] - Update plugin settings
+// API: Installed Plugin - Update settings and Uninstall
+// PUT /api/projects/:id/plugins/:pluginId - Update plugin settings
+// DELETE /api/projects/:id/plugins/:pluginId - Uninstall plugin
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -24,79 +25,74 @@ const getCurrentUser = async () => {
 const checkProjectAccess = async (projectId: string, userId: string) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { collaborations: true }
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
   });
 
-  if (!project) return { allowed: false, reason: 'Project not found' };
-
-  const isOwner = project.ownerId === userId;
-  const isCollaborator = project.collaborations.some(
-    c => c.userId === userId && c.acceptedAt !== null
-  );
-
-  if (!isOwner && !isCollaborator) {
-    return { allowed: false, reason: 'Access denied' };
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
   }
-
-  const role = isOwner ? 'OWNER' : project.collaborations.find(c => c.userId === userId)?.role;
-
-  return { allowed: true, role };
+  return null;
 };
 
-// Update plugin settings
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; pluginId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId, pluginId } = await params;
+    const { id, pluginId } = await params;
     const body = await request.json();
     const { settings } = body;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions' },
         { status: 403 }
       );
     }
 
-    // Check if user has edit permission
-    if (access.role !== 'OWNER' && access.role !== 'ADMIN' && access.role !== 'EDITOR') {
-      return NextResponse.json(
-        { success: false, error: 'Edit permission denied' },
-        { status: 403 }
-      );
-    }
-
-    // Update plugin settings
-    const updated = await prisma.installedPlugin.update({
+    const existing = await prisma.installedPlugin.findFirst({
       where: {
-        projectId_pluginId: {
-          projectId,
-          pluginId
-        }
+        projectId: id,
+        pluginId
+      }
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'Plugin not installed' },
+        { status: 404 }
+      );
+    }
+
+    const installed = await prisma.installedPlugin.update({
+      where: { id: existing.id },
+      data: {
+        settings: settings || {}
       },
-      data: { settings },
       include: {
-        plugin: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            version: true,
-            type: true,
-            manifest: true
-          }
-        }
+        plugin: true
       }
     });
 
     return NextResponse.json({
       success: true,
-      data: updated,
+      data: installed,
       message: 'Plugin settings updated successfully'
     });
   } catch (error) {
@@ -108,60 +104,49 @@ export async function PUT(
   }
 }
 
-// Uninstall a plugin
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; pluginId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId, pluginId } = await params;
+    const { id, pluginId } = await params;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
-      );
-    }
-
-    // Check if user has edit permission
-    if (access.role !== 'OWNER' && access.role !== 'ADMIN' && access.role !== 'EDITOR') {
-      return NextResponse.json(
-        { success: false, error: 'Edit permission denied' },
-        { status: 403 }
-      );
-    }
-
-    // Check if plugin is installed
-    const installed = await prisma.installedPlugin.findUnique({
-      where: {
-        projectId_pluginId: {
-          projectId,
-          pluginId
-        }
-      }
-    });
-
-    if (!installed) {
-      return NextResponse.json(
-        { success: false, error: 'Plugin is not installed' },
+        { success: false, error: 'Project not found or access denied' },
         { status: 404 }
       );
     }
 
-    // Uninstall plugin
-    await prisma.installedPlugin.delete({
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions' },
+        { status: 403 }
+      );
+    }
+
+    const existing = await prisma.installedPlugin.findFirst({
       where: {
-        projectId_pluginId: {
-          projectId,
-          pluginId
-        }
+        projectId: id,
+        pluginId
       }
     });
 
-    // Update plugin install count
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'Plugin not installed' },
+        { status: 404 }
+      );
+    }
+
+    await prisma.installedPlugin.delete({
+      where: { id: existing.id }
+    });
+
+    // Decrement plugin install count
     await prisma.plugin.update({
       where: { id: pluginId },
       data: {

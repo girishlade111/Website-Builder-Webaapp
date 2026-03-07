@@ -1,19 +1,10 @@
-// API: API Integrations - List, Create, Update, Delete, Test
-// GET /api/projects/[id]/api-integrations - List all API integrations
-// POST /api/projects/[id]/api-integrations - Create API integration
-// PUT /api/projects/[id]/api-integrations/[integrationId] - Update integration
-// DELETE /api/projects/[id]/api-integrations/[integrationId] - Delete integration
-// POST /api/projects/[id]/api-integrations/[integrationId]/test - Test integration
+// API: API Integrations - List and Create
+// GET /api/projects/:id/api-integrations - List all integrations
+// POST /api/projects/:id/api-integrations - Create integration
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import {
-  executeApiRequest,
-  createApiIntegration as createIntegration,
-  updateApiIntegration as updateIntegration,
-  deleteApiIntegration as deleteIntegration,
-  listApiIntegrations
-} from '@/lib/services/apiIntegration';
+import { executeApiRequest, createApiIntegration, listApiIntegrations } from '@/lib/services/apiIntegration';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -35,23 +26,19 @@ const getCurrentUser = async () => {
 const checkProjectAccess = async (projectId: string, userId: string) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { collaborations: true }
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
   });
 
-  if (!project) return { allowed: false, reason: 'Project not found' };
-
-  const isOwner = project.ownerId === userId;
-  const isCollaborator = project.collaborations.some(
-    c => c.userId === userId && c.acceptedAt !== null
-  );
-
-  if (!isOwner && !isCollaborator) {
-    return { allowed: false, reason: 'Access denied' };
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
   }
-
-  const role = isOwner ? 'OWNER' : project.collaborations.find(c => c.userId === userId)?.role;
-
-  return { allowed: true, role };
+  return null;
 };
 
 export async function GET(
@@ -60,27 +47,27 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
-    const integrations = await listApiIntegrations(projectId);
+    const integrations = await listApiIntegrations(id);
 
     return NextResponse.json({
       success: true,
       data: integrations
     });
   } catch (error) {
-    console.error('Error fetching API integrations:', error);
+    console.error('Error fetching integrations:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch API integrations' },
+      { success: false, error: 'Failed to fetch integrations' },
       { status: 500 }
     );
   }
@@ -92,35 +79,25 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
     const body = await request.json();
+    const { name, endpoint, method = 'GET', headers, authType, authConfig, responseMapping } = body;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
-    // Check if user has edit permission
-    if (access.role !== 'OWNER' && access.role !== 'ADMIN' && access.role !== 'EDITOR') {
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
       return NextResponse.json(
-        { success: false, error: 'Edit permission denied' },
+        { success: false, error: 'Insufficient permissions' },
         { status: 403 }
       );
     }
-
-    const {
-      name,
-      endpoint,
-      method = 'GET',
-      headers = {},
-      authType = 'NONE',
-      authConfig = {},
-      responseMapping = {}
-    } = body;
 
     if (!name || !endpoint) {
       return NextResponse.json(
@@ -129,12 +106,12 @@ export async function POST(
       );
     }
 
-    const integration = await createIntegration(projectId, {
+    const integration = await createApiIntegration(id, {
       name,
       endpoint,
       method,
       headers,
-      authType: authType as any,
+      authType,
       authConfig,
       responseMapping
     });
@@ -145,9 +122,9 @@ export async function POST(
       message: 'API integration created successfully'
     }, { status: 201 });
   } catch (error) {
-    console.error('Error creating API integration:', error);
+    console.error('Error creating integration:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to create API integration' },
+      { success: false, error: 'Failed to create integration' },
       { status: 500 }
     );
   }

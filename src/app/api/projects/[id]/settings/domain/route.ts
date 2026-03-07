@@ -1,6 +1,5 @@
-// API: Project Settings - Get and Update
-// GET /api/projects/:id/settings - Get project settings
-// PUT /api/projects/:id/settings - Update project settings
+// API: Project Settings - Domain
+// PUT /api/projects/:id/settings/domain - Update domain settings
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -40,38 +39,6 @@ const checkProjectAccess = async (projectId: string, userId: string) => {
   return null;
 };
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const user = await getCurrentUser();
-    const { id } = await params;
-
-    const project = await checkProjectAccess(id, user.id);
-
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
-        { status: 404 }
-      );
-    }
-
-    const settings = (project.settings as any) || {};
-
-    return NextResponse.json({
-      success: true,
-      data: settings
-    });
-  } catch (error) {
-    console.error('Error fetching settings:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch settings' },
-      { status: 500 }
-    );
-  }
-}
-
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -80,6 +47,7 @@ export async function PUT(
     const user = await getCurrentUser();
     const { id } = await params;
     const body = await request.json();
+    const { domain } = body;
 
     const project = await checkProjectAccess(id, user.id);
 
@@ -90,18 +58,20 @@ export async function PUT(
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions' },
         { status: 403 }
       );
     }
 
-    // Merge with existing settings
     const existingSettings = (project.settings as any) || {};
     const updatedSettings = {
       ...existingSettings,
-      ...body
+      domain: {
+        ...(existingSettings.domain || {}),
+        ...domain
+      }
     };
 
     const updated = await prisma.project.update({
@@ -113,13 +83,13 @@ export async function PUT(
 
     return NextResponse.json({
       success: true,
-      data: updatedSettings,
-      message: 'Settings updated successfully'
+      data: updatedSettings.domain,
+      message: 'Domain settings updated successfully'
     });
   } catch (error) {
-    console.error('Error updating settings:', error);
+    console.error('Error updating domain settings:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to update settings' },
+      { success: false, error: 'Failed to update domain settings' },
       { status: 500 }
     );
   }

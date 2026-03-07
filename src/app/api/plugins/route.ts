@@ -1,6 +1,6 @@
 // API: Plugins - List and Create
 // GET /api/plugins - List all plugins
-// POST /api/plugins - Create a new plugin
+// POST /api/plugins - Create plugin
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -27,18 +27,18 @@ export async function GET(
 ) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const type = searchParams.get('type');
-    const isPremium = searchParams.get('premium');
-    const search = searchParams.get('search');
+    const type = searchParams.get('type') || undefined;
+    const premium = searchParams.get('premium');
+    const search = searchParams.get('search') || undefined;
 
-    const where: any = { isPublished: true };
+    const where: any = {};
 
     if (type) {
       where.type = type;
     }
 
-    if (isPremium !== null && isPremium !== undefined) {
-      where.isPremium = isPremium === 'true';
+    if (premium !== null && premium !== undefined) {
+      where.isPremium = premium === 'true';
     }
 
     if (search) {
@@ -72,7 +72,6 @@ export async function POST(
   try {
     const user = await getCurrentUser();
     const body = await request.json();
-
     const {
       name,
       description,
@@ -82,19 +81,12 @@ export async function POST(
       code,
       schema,
       isPremium = false,
-      price = 0
+      price
     } = body;
 
-    if (!name) {
+    if (!name || !type) {
       return NextResponse.json(
-        { success: false, error: 'Plugin name is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!type) {
-      return NextResponse.json(
-        { success: false, error: 'Plugin type is required' },
+        { success: false, error: 'Name and type are required' },
         { status: 400 }
       );
     }
@@ -109,8 +101,7 @@ export async function POST(
         code,
         schema,
         isPremium,
-        price: typeof price === 'number' ? price : 0,
-        isPublished: false // Default to unpublished
+        price: isPremium ? price || 0 : 0
       }
     });
 

@@ -1,10 +1,11 @@
-// API: Single Project - Get, Update, Delete
-// GET /api/projects/[id] - Get project by ID
-// PUT /api/projects/[id] - Update project
-// DELETE /api/projects/[id] - Delete project
+// API: Project by ID - Get, Update, Delete
+// GET /api/projects/:id - Get project by ID
+// PUT /api/projects/:id - Update project
+// DELETE /api/projects/:id - Delete project
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { deleteVercelProject } from '@/lib/services/deployment';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -23,6 +24,24 @@ const getCurrentUser = async () => {
   return user;
 };
 
+const checkProjectAccess = async (projectId: string, userId: string) => {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
+  });
+
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
+  }
+  return null;
+};
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -31,56 +50,18 @@ export async function GET(
     const user = await getCurrentUser();
     const { id } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id },
-      include: {
-        pages: {
-          orderBy: { createdAt: 'asc' }
-        },
-        collaborations: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true, image: true }
-            }
-          }
-        },
-        assets: {
-          orderBy: { createdAt: 'desc' },
-          take: 20
-        },
-        versions: {
-          orderBy: { version: 'desc' },
-          take: 10
-        },
-        installedPlugins: {
-          include: {
-            plugin: true
-          }
-        }
-      }
-    });
+    const project = await checkProjectAccess(id, user.id);
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found' },
+        { success: false, error: 'Project not found or access denied' },
         { status: 404 }
-      );
-    }
-
-    // Check access
-    const isOwner = project.ownerId === user.id;
-    const isCollaborator = project.collaborations.some(c => c.userId === user.id);
-    
-    if (!isOwner && !isCollaborator) {
-      return NextResponse.json(
-        { success: false, error: 'Access denied' },
-        { status: 403 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      data: project
+      data: { project }
     });
   } catch (error) {
     console.error('Error fetching project:', error);
@@ -100,38 +81,47 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const project = await prisma.project.findUnique({
-      where: { id }
-    });
+    const project = await checkProjectAccess(id, user.id);
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found' },
+        { success: false, error: 'Project not found or access denied' },
         { status: 404 }
       );
     }
 
-    // Check ownership
-    if (project.ownerId !== user.id) {
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
       return NextResponse.json(
-        { success: false, error: 'Access denied' },
+        { success: false, error: 'Insufficient permissions' },
         { status: 403 }
       );
     }
 
-    const { name, description, settings, deploymentConfig, status } = body;
+    const { name, description, slug, thumbnail, status, settings, deploymentConfig } = body;
+
+    // Check slug uniqueness if changed
+    if (slug && slug !== project.slug) {
+      const existing = await prisma.project.findUnique({
+        where: { slug }
+      });
+      if (existing && existing.id !== id) {
+        return NextResponse.json(
+          { success: false, error: 'Project slug already exists' },
+          { status: 400 }
+        );
+      }
+    }
 
     const updated = await prisma.project.update({
       where: { id },
       data: {
         ...(name && { name }),
         ...(description !== undefined && { description }),
+        ...(slug && { slug }),
+        ...(thumbnail !== undefined && { thumbnail }),
+        ...(status && { status }),
         ...(settings && { settings }),
-        ...(deploymentConfig && { deploymentConfig }),
-        ...(status && { status })
-      },
-      include: {
-        pages: true
+        ...(deploymentConfig && { deploymentConfig })
       }
     });
 
@@ -157,23 +147,30 @@ export async function DELETE(
     const user = await getCurrentUser();
     const { id } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id }
-    });
+    const project = await checkProjectAccess(id, user.id);
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found' },
+        { success: false, error: 'Project not found or access denied' },
         { status: 404 }
       );
     }
 
-    // Check ownership
-    if (project.ownerId !== user.id) {
+    if (project.role !== 'OWNER') {
       return NextResponse.json(
-        { success: false, error: 'Access denied' },
+        { success: false, error: 'Only owner can delete project' },
         { status: 403 }
       );
+    }
+
+    // Delete from Vercel if deployed
+    const deploymentConfig = project.deploymentConfig as any;
+    if (deploymentConfig?.vercelId && process.env.VERCEL_TOKEN) {
+      try {
+        await deleteVercelProject(deploymentConfig.vercelId);
+      } catch (error) {
+        console.error('Failed to delete Vercel project:', error);
+      }
     }
 
     await prisma.project.delete({

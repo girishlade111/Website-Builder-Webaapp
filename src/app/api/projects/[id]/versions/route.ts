@@ -1,6 +1,6 @@
 // API: Project Versions - List and Create
-// GET /api/projects/[id]/versions - List all versions
-// POST /api/projects/[id]/versions - Create a new version
+// GET /api/projects/:id/versions - List all versions
+// POST /api/projects/:id/versions - Create new version
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -25,21 +25,19 @@ const getCurrentUser = async () => {
 const checkProjectAccess = async (projectId: string, userId: string) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { collaborations: true }
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
   });
 
-  if (!project) return { allowed: false, reason: 'Project not found' };
-
-  const isOwner = project.ownerId === userId;
-  const isCollaborator = project.collaborations.some(
-    c => c.userId === userId && c.acceptedAt !== null
-  );
-
-  if (!isOwner && !isCollaborator) {
-    return { allowed: false, reason: 'Access denied' };
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
   }
-
-  return { allowed: true };
+  return null;
 };
 
 export async function GET(
@@ -48,19 +46,19 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
     const versions = await prisma.projectVersion.findMany({
-      where: { projectId },
+      where: { projectId: id },
       include: {
         createdBy: {
           select: { id: true, name: true, email: true }
@@ -71,7 +69,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: versions
+      data: { versions }
     });
   } catch (error) {
     console.error('Error fetching versions:', error);
@@ -88,54 +86,50 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
     const body = await request.json();
-    const { message } = body || {};
+    const { message } = body;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
-      return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
-      );
-    }
-
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: { pages: true }
-    });
+    const project = await checkProjectAccess(id, user.id);
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found' },
+        { success: false, error: 'Project not found or access denied' },
         { status: 404 }
       );
     }
 
-    // Get current version count
-    const versionCount = await prisma.projectVersion.count({
-      where: { projectId }
+    // Get current project state
+    const pages = await prisma.page.findMany({
+      where: { projectId: id }
     });
 
-    // Create version snapshot
+    // Get latest version number
+    const latestVersion = await prisma.projectVersion.findFirst({
+      where: { projectId: id },
+      orderBy: { version: 'desc' }
+    });
+
     const version = await prisma.projectVersion.create({
       data: {
-        projectId,
-        version: versionCount + 1,
+        projectId: id,
+        version: (latestVersion?.version || 0) + 1,
         message: message || 'Manual version save',
         snapshot: {
           project: {
-            id: project.id,
+            id,
             name: project.name,
             description: project.description,
-            settings: project.settings
+            settings: project.settings,
+            deploymentConfig: project.deploymentConfig
           },
-          pages: project.pages.map(p => ({
+          pages: pages.map(p => ({
             id: p.id,
             name: p.name,
             path: p.path,
-            schema: p.schema as any
+            schema: p.schema as any,
+            metaTitle: p.metaTitle,
+            metaDescription: p.metaDescription
           }))
         },
         createdById: user.id

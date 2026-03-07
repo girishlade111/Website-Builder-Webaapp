@@ -1,6 +1,7 @@
-// API: Project Settings - Get and Update
-// GET /api/projects/:id/settings - Get project settings
-// PUT /api/projects/:id/settings - Update project settings
+// API: Project Settings - SEO, Domain, Analytics sub-routes
+// PUT /api/projects/:id/settings/seo - Update SEO settings
+// PUT /api/projects/:id/settings/domain - Update domain settings
+// PUT /api/projects/:id/settings/analytics - Update analytics settings
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -40,38 +41,7 @@ const checkProjectAccess = async (projectId: string, userId: string) => {
   return null;
 };
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const user = await getCurrentUser();
-    const { id } = await params;
-
-    const project = await checkProjectAccess(id, user.id);
-
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
-        { status: 404 }
-      );
-    }
-
-    const settings = (project.settings as any) || {};
-
-    return NextResponse.json({
-      success: true,
-      data: settings
-    });
-  } catch (error) {
-    console.error('Error fetching settings:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch settings' },
-      { status: 500 }
-    );
-  }
-}
-
+// SEO Settings
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -80,6 +50,7 @@ export async function PUT(
     const user = await getCurrentUser();
     const { id } = await params;
     const body = await request.json();
+    const { seo } = body;
 
     const project = await checkProjectAccess(id, user.id);
 
@@ -97,11 +68,13 @@ export async function PUT(
       );
     }
 
-    // Merge with existing settings
     const existingSettings = (project.settings as any) || {};
     const updatedSettings = {
       ...existingSettings,
-      ...body
+      seo: {
+        ...(existingSettings.seo || {}),
+        ...seo
+      }
     };
 
     const updated = await prisma.project.update({
@@ -113,13 +86,13 @@ export async function PUT(
 
     return NextResponse.json({
       success: true,
-      data: updatedSettings,
-      message: 'Settings updated successfully'
+      data: updatedSettings.seo,
+      message: 'SEO settings updated successfully'
     });
   } catch (error) {
-    console.error('Error updating settings:', error);
+    console.error('Error updating SEO settings:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to update settings' },
+      { success: false, error: 'Failed to update SEO settings' },
       { status: 500 }
     );
   }

@@ -100,6 +100,13 @@ async function uploadToS3(
   fileName: string,
   mimeType: string
 ): Promise<AssetUploadResult> {
+  const { nanoid } = await import('nanoid');
+
+  if (!AWS_S3_BUCKET) {
+    throw new Error('S3 bucket not configured');
+  }
+
+  // Dynamically import AWS SDK
   let S3Client: any, PutObjectCommand: any;
   try {
     // @ts-ignore - AWS SDK is optional
@@ -108,12 +115,6 @@ async function uploadToS3(
     PutObjectCommand = s3Module.PutObjectCommand;
   } catch {
     throw new Error('AWS SDK not installed. Install @aws-sdk/client-s3 for S3 support.');
-  }
-
-  const { nanoid } = await import('nanoid');
-
-  if (!AWS_S3_BUCKET) {
-    throw new Error('S3 bucket not configured');
   }
 
   const s3Client = new S3Client({
@@ -151,6 +152,13 @@ async function uploadToCloudinary(
   fileName: string,
   mimeType: string
 ): Promise<AssetUploadResult> {
+  const { nanoid } = await import('nanoid');
+
+  if (!CLOUDINARY_CLOUD_NAME) {
+    throw new Error('Cloudinary not configured');
+  }
+
+  // Dynamically import Cloudinary
   let cloudinary: any;
   try {
     // @ts-ignore - Cloudinary SDK is optional
@@ -158,12 +166,6 @@ async function uploadToCloudinary(
     cloudinary = cloudinaryModule.v2;
   } catch {
     throw new Error('Cloudinary SDK not installed. Install cloudinary for Cloudinary support.');
-  }
-
-  const { nanoid } = await import('nanoid');
-
-  if (!CLOUDINARY_CLOUD_NAME) {
-    throw new Error('Cloudinary not configured');
   }
 
   cloudinary.config({
@@ -238,6 +240,11 @@ async function deleteLocal(storageKey: string): Promise<void> {
 
 // Delete from S3
 async function deleteFromS3(storageKey: string): Promise<void> {
+  if (!AWS_S3_BUCKET) {
+    throw new Error('S3 bucket not configured');
+  }
+
+  // Dynamically import AWS SDK
   let S3Client: any, DeleteObjectCommand: any;
   try {
     // @ts-ignore - AWS SDK is optional
@@ -270,6 +277,11 @@ async function deleteFromS3(storageKey: string): Promise<void> {
 
 // Delete from Cloudinary
 async function deleteFromCloudinary(storageKey: string): Promise<void> {
+  if (!CLOUDINARY_CLOUD_NAME) {
+    return;
+  }
+
+  // Dynamically import Cloudinary
   let cloudinary: any;
   try {
     // @ts-ignore - Cloudinary SDK is optional
@@ -277,10 +289,6 @@ async function deleteFromCloudinary(storageKey: string): Promise<void> {
     cloudinary = cloudinaryModule.v2;
   } catch {
     // Cloudinary not configured, skip deletion
-    return;
-  }
-
-  if (!CLOUDINARY_CLOUD_NAME) {
     return;
   }
 
@@ -371,7 +379,10 @@ export function getTransformedAssetUrl(
 ): string {
   if (asset.storageProvider === 'cloudinary' && options) {
     try {
-      const { v2: cloudinary } = require('cloudinary');
+      // Dynamically require cloudinary
+      // @ts-ignore - Cloudinary SDK is optional
+      const cloudinaryModule = require('cloudinary');
+      const cloudinary = cloudinaryModule.v2;
       return cloudinary.url(asset.storageKey, {
         transformations: [
           options.width ? { width: options.width } : {},

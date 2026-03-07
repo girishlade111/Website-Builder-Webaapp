@@ -1,13 +1,15 @@
 // API: Project Assets - List and Upload
-// GET /api/projects/[id]/assets - List all assets
-// POST /api/projects/[id]/assets - Upload a new asset
+// GET /api/projects/:id/assets - List all assets
+// POST /api/projects/:id/assets - Upload new asset
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { nanoid } from 'nanoid';
-import { mkdir, writeFile } from 'fs/promises';
-import { join } from 'path';
-import { existsSync } from 'fs';
+import {
+  uploadAsset,
+  createAssetRecord,
+  listAssets as listAssetsService,
+  getStorageProvider
+} from '@/lib/services/assetStorage';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -29,54 +31,29 @@ const getCurrentUser = async () => {
 const checkProjectAccess = async (projectId: string, userId: string) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { collaborations: true }
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
   });
 
-  if (!project) return { allowed: false, reason: 'Project not found' };
-
-  const isOwner = project.ownerId === userId;
-  const isCollaborator = project.collaborations.some(
-    c => c.userId === userId && c.acceptedAt !== null
-  );
-
-  if (!isOwner && !isCollaborator) {
-    return { allowed: false, reason: 'Access denied' };
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
   }
-
-  const role = isOwner ? 'OWNER' : project.collaborations.find(c => c.userId === userId)?.role;
-
-  return { allowed: true, role };
+  return null;
 };
 
-// Get asset type from MIME type
-function getAssetTypeFromMimeType(mimeType: string): string {
+const getAssetTypeFromMime = (mimeType: string): string => {
   if (mimeType.startsWith('image/')) return 'IMAGE';
   if (mimeType.startsWith('video/')) return 'VIDEO';
   if (mimeType.startsWith('audio/')) return 'AUDIO';
   if (mimeType.includes('font')) return 'FONT';
-  if (mimeType.includes('pdf') || mimeType.includes('text')) return 'DOCUMENT';
+  if (mimeType.includes('pdf') || mimeType.includes('document')) return 'DOCUMENT';
   return 'OTHER';
-}
-
-// Get file extension from MIME type
-function getExtensionFromMimeType(mimeType: string): string {
-  const extensions: Record<string, string> = {
-    'image/jpeg': 'jpg',
-    'image/png': 'png',
-    'image/gif': 'gif',
-    'image/webp': 'webp',
-    'image/svg+xml': 'svg',
-    'video/mp4': 'mp4',
-    'video/webm': 'webm',
-    'audio/mp3': 'mp3',
-    'audio/wav': 'wav',
-    'application/pdf': 'pdf',
-    'text/plain': 'txt',
-    'font/woff2': 'woff2',
-    'font/woff': 'woff',
-  };
-  return extensions[mimeType] || 'bin';
-}
+};
 
 export async function GET(
   request: NextRequest,
@@ -84,38 +61,25 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
     const searchParams = request.nextUrl.searchParams;
-    const type = searchParams.get('type');
+    const type = searchParams.get('type') || undefined;
 
-    const where: any = { projectId };
-    if (type) {
-      where.type = type;
-    }
-
-    const assets = await prisma.asset.findMany({
-      where,
-      include: {
-        uploadedBy: {
-          select: { id: true, name: true, email: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+    const result = await listAssetsService(id, { type });
 
     return NextResponse.json({
       success: true,
-      data: assets
+      data: result
     });
   } catch (error) {
     console.error('Error fetching assets:', error);
@@ -132,26 +96,24 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions' },
         { status: 403 }
       );
     }
 
-    // Check if user has upload permission
-    if (access.role !== 'OWNER' && access.role !== 'ADMIN' && access.role !== 'EDITOR') {
-      return NextResponse.json(
-        { success: false, error: 'Upload permission denied' },
-        { status: 403 }
-      );
-    }
-
-    // Parse multipart form data
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const name = formData.get('name') as string | null;
@@ -172,50 +134,28 @@ export async function POST(
       );
     }
 
-    // Get file info
-    const mimeType = file.type || 'application/octet-stream';
-    const assetType = getAssetTypeFromMimeType(mimeType);
-    const extension = getExtensionFromMimeType(mimeType);
-    const fileName = name || file.name || `asset-${nanoid()}.${extension}`;
+    // Convert file to buffer
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
 
-    // Generate unique storage path
-    const storageKey = `assets/${projectId}/${nanoid()}-${fileName}`;
-    
-    // Ensure storage directory exists
-    const storageDir = join(process.cwd(), 'public', 'uploads', projectId);
-    if (!existsSync(storageDir)) {
-      await mkdir(storageDir, { recursive: true });
-    }
-
-    // Save file to local storage
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const filePath = join(storageDir, `${nanoid()}-${fileName}`);
-    await writeFile(filePath, fileBuffer);
-
-    // Generate URLs
-    const url = `/uploads/${projectId}/${nanoid()}-${fileName}`;
-    const thumbnailUrl = assetType === 'IMAGE' ? url : null;
+    // Upload to storage provider
+    const uploadResult = await uploadAsset(
+      id,
+      buffer,
+      file.name,
+      file.type
+    );
 
     // Create asset record
-    const asset = await prisma.asset.create({
-      data: {
-        projectId,
-        name: fileName,
-        type: assetType as any,
-        url,
-        thumbnailUrl,
-        size: file.size,
-        mimeType,
-        storageProvider: 'local',
-        storageKey,
-        uploadedById: user.id
-      },
-      include: {
-        uploadedBy: {
-          select: { id: true, name: true, email: true }
-        }
-      }
-    });
+    const asset = await createAssetRecord(
+      id,
+      user.id,
+      name || file.name,
+      getAssetTypeFromMime(file.type),
+      file.type,
+      file.size,
+      uploadResult
+    );
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,6 @@
-// API: Pages - List and Create
-// GET /api/projects/[id]/pages - List all pages for a project
-// POST /api/projects/[id]/pages - Create a new page
+// API: Project Pages - List and Create
+// GET /api/projects/:id/pages - List all pages for a project
+// POST /api/projects/:id/pages - Create a new page
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -26,23 +26,19 @@ const getCurrentUser = async () => {
 const checkProjectAccess = async (projectId: string, userId: string) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { collaborations: true }
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
   });
 
-  if (!project) return { allowed: false, reason: 'Project not found' };
-
-  const isOwner = project.ownerId === userId;
-  const isCollaborator = project.collaborations.some(
-    c => c.userId === userId && c.acceptedAt !== null
-  );
-
-  if (!isOwner && !isCollaborator) {
-    return { allowed: false, reason: 'Access denied' };
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
   }
-
-  const role = isOwner ? 'OWNER' : project.collaborations.find(c => c.userId === userId)?.role;
-
-  return { allowed: true, role };
+  return null;
 };
 
 export async function GET(
@@ -51,25 +47,37 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
     const pages = await prisma.page.findMany({
-      where: { projectId },
-      orderBy: [{ isHome: 'desc' }, { createdAt: 'asc' }]
+      where: { projectId: id },
+      include: {
+        versions: {
+          select: {
+            id: true,
+            version: true,
+            message: true,
+            createdAt: true
+          },
+          orderBy: { version: 'desc' },
+          take: 1
+        }
+      },
+      orderBy: { createdAt: 'asc' }
     });
 
     return NextResponse.json({
       success: true,
-      data: pages
+      data: { pages }
     });
   } catch (error) {
     console.error('Error fetching pages:', error);
@@ -86,27 +94,25 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
     const body = await request.json();
+    const { name, slug, path, schema, metaTitle, metaDescription, metaKeywords, ogImage } = body;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
-    // Check if user has edit permission
-    if (access.role !== 'OWNER' && access.role !== 'ADMIN' && access.role !== 'EDITOR') {
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
       return NextResponse.json(
-        { success: false, error: 'Edit permission denied' },
+        { success: false, error: 'Insufficient permissions' },
         { status: 403 }
       );
     }
-
-    const { name, slug, path, schema, metaTitle, metaDescription } = body;
 
     if (!name) {
       return NextResponse.json(
@@ -115,39 +121,37 @@ export async function POST(
       );
     }
 
-    // Generate path if not provided
-    const pagePath = path || `/${slug || name.toLowerCase().replace(/\s+/g, '-')}`;
+    // Generate slug and path if not provided
     const pageSlug = slug || name.toLowerCase().replace(/\s+/g, '-');
+    const pagePath = path || `/${pageSlug}`;
 
-    // Check if path already exists
+    // Check path uniqueness
     const existing = await prisma.page.findFirst({
-      where: { projectId, path: pagePath }
+      where: {
+        projectId: id,
+        path: pagePath
+      }
     });
 
     if (existing) {
       return NextResponse.json(
-        { success: false, error: 'Path already exists in this project' },
+        { success: false, error: 'Page path already exists' },
         { status: 400 }
       );
     }
 
-    // Create page
     const page = await prisma.page.create({
       data: {
-        projectId,
+        projectId: id,
         name,
         slug: pageSlug,
         path: pagePath,
-        schema: schema || {
-          components: [],
-          styles: {},
-          settings: {}
-        },
-        metaTitle: metaTitle || name,
-        metaDescription: metaDescription || ''
-      },
-      include: {
-        versions: true
+        isHome: false,
+        schema: schema || { components: [], styles: {}, settings: {} },
+        metaTitle,
+        metaDescription,
+        metaKeywords,
+        ogImage
       }
     });
 

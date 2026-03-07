@@ -1,388 +1,369 @@
-// Seed data for templates and plugins
+// Database Seed Script - Populate with default templates and plugins
 
-import prisma from '@/lib/prisma';
+import prisma from '../src/lib/prisma';
 
 async function main() {
-  console.log('🌱 Seeding templates and plugins...');
+  console.log('🌱 Seeding database...');
+
+  // Create demo user if not exists
+  const demoUser = await prisma.user.upsert({
+    where: { email: 'demo@example.com' },
+    update: {},
+    create: {
+      email: 'demo@example.com',
+      name: 'Demo User'
+    }
+  });
+
+  console.log('✓ Created demo user');
 
   // ============================================
   // TEMPLATES
   // ============================================
 
-  // Business Template
-  await prisma.template.upsert({
-    where: { id: 'template-business-1' },
-    update: {},
-    create: {
-      id: 'template-business-1',
-      name: 'Modern Business',
-      description: 'A professional template for business websites with hero section, features, and contact form.',
-      thumbnail: '/templates/business-modern.jpg',
+  const templates = [
+    {
+      name: 'Business Landing Page',
+      description: 'A professional landing page template for businesses',
       category: 'Business',
-      tags: ['business', 'professional', 'corporate', 'modern'],
-      isPublished: true,
-      isPremium: false,
+      tags: ['landing', 'business', 'professional', 'modern'],
       schema: {
         pages: [
           {
             name: 'Home',
             path: '/',
+            isHome: true,
             schema: {
               components: [
                 {
+                  id: 'nav-1',
+                  type: 'navbar',
+                  category: 'navigation',
+                  name: 'Navigation',
+                  styles: { className: 'bg-white shadow-sm' },
+                  content: {
+                    logo: 'Company',
+                    links: [
+                      { label: 'Home', href: '/' },
+                      { label: 'About', href: '/about' },
+                      { label: 'Services', href: '/services' },
+                      { label: 'Contact', href: '/contact' }
+                    ]
+                  }
+                },
+                {
                   id: 'hero-1',
                   type: 'hero',
+                  category: 'layout',
                   name: 'Hero Section',
+                  styles: { 
+                    className: 'py-20 bg-gradient-to-r from-blue-500 to-purple-600 text-white',
+                    textAlign: 'center'
+                  },
                   content: {
-                    title: 'Build Your Business Online',
-                    subtitle: 'Professional solutions for modern businesses',
+                    title: 'Welcome to Our Business',
+                    subtitle: 'We provide the best solutions for your needs',
                     ctaText: 'Get Started',
                     ctaLink: '/contact'
-                  },
-                  styles: { className: 'hero-section' }
+                  }
                 },
                 {
                   id: 'features-1',
                   type: 'cards',
+                  category: 'layout',
                   name: 'Features',
+                  styles: { className: 'py-16' },
                   content: {
                     cards: [
-                      { title: 'Analytics', description: 'Track your business metrics' },
-                      { title: 'Automation', description: 'Automate your workflows' },
-                      { title: 'Integration', description: 'Connect with your tools' }
+                      {
+                        title: 'Fast Delivery',
+                        description: 'Get your projects completed on time, every time.',
+                        icon: 'zap'
+                      },
+                      {
+                        title: 'Quality Work',
+                        description: 'We never compromise on quality.',
+                        icon: 'star'
+                      },
+                      {
+                        title: '24/7 Support',
+                        description: 'Our team is always here to help.',
+                        icon: 'headphones'
+                      }
                     ]
-                  },
-                  styles: { className: 'features-section' }
-                }
-              ]
-            }
-          },
-          {
-            name: 'About',
-            path: '/about',
-            schema: {
-              components: [
-                {
-                  id: 'heading-1',
-                  type: 'heading',
-                  content: { level: 1, text: 'About Us' },
-                  styles: {}
+                  }
                 },
                 {
-                  id: 'paragraph-1',
-                  type: 'paragraph',
-                  content: { text: 'We are a team of professionals dedicated to helping businesses succeed.' },
-                  styles: {}
-                }
-              ]
-            }
-          },
-          {
-            name: 'Contact',
-            path: '/contact',
-            schema: {
-              components: [
-                {
-                  id: 'heading-1',
-                  type: 'heading',
-                  content: { level: 1, text: 'Contact Us' },
-                  styles: {}
-                },
-                {
-                  id: 'form-1',
-                  type: 'contactForm',
-                  content: {},
-                  styles: {}
+                  id: 'footer-1',
+                  type: 'footer',
+                  category: 'navigation',
+                  name: 'Footer',
+                  styles: { className: 'bg-gray-900 text-white py-8' },
+                  content: {
+                    text: '© 2024 Company Name. All rights reserved.'
+                  }
                 }
               ]
             }
           }
         ]
       }
-    }
-  });
-
-  // Portfolio Template
-  await prisma.template.upsert({
-    where: { id: 'template-portfolio-1' },
-    update: {},
-    create: {
-      id: 'template-portfolio-1',
-      name: 'Creative Portfolio',
-      description: 'Showcase your work with this beautiful portfolio template.',
-      thumbnail: '/templates/portfolio-creative.jpg',
+    },
+    {
+      name: 'Portfolio Website',
+      description: 'A clean portfolio template for creatives and developers',
       category: 'Portfolio',
-      tags: ['portfolio', 'creative', 'personal', 'gallery'],
-      isPublished: true,
-      isPremium: false,
+      tags: ['portfolio', 'personal', 'creative', 'minimal'],
       schema: {
         pages: [
           {
             name: 'Home',
             path: '/',
+            isHome: true,
             schema: {
               components: [
                 {
+                  id: 'nav-1',
+                  type: 'navbar',
+                  category: 'navigation',
+                  name: 'Navigation',
+                  styles: { className: 'bg-transparent absolute w-full' },
+                  content: {
+                    logo: 'John Doe',
+                    links: [
+                      { label: 'Work', href: '#work' },
+                      { label: 'About', href: '#about' },
+                      { label: 'Contact', href: '#contact' }
+                    ]
+                  }
+                },
+                {
                   id: 'hero-1',
                   type: 'hero',
+                  category: 'layout',
                   name: 'Hero',
-                  content: {
-                    title: 'John Doe',
-                    subtitle: 'Creative Designer & Developer',
-                    ctaText: 'View My Work',
-                    ctaLink: '/projects'
+                  styles: { 
+                    className: 'min-h-screen flex items-center justify-center',
+                    background: '#1a1a1a',
+                    color: 'white'
                   },
-                  styles: {}
+                  content: {
+                    title: "I'm John Doe",
+                    subtitle: 'A Creative Developer based in San Francisco',
+                    ctaText: 'View My Work',
+                    ctaLink: '#work'
+                  }
                 },
                 {
                   id: 'gallery-1',
-                  type: 'gallery',
-                  name: 'Project Gallery',
-                  content: {
-                    images: [
-                      { src: '/project1.jpg', alt: 'Project 1' },
-                      { src: '/project2.jpg', alt: 'Project 2' },
-                      { src: '/project3.jpg', alt: 'Project 3' }
-                    ]
-                  },
-                  styles: {}
-                }
-              ]
-            }
-          },
-          {
-            name: 'Projects',
-            path: '/projects',
-            schema: {
-              components: [
-                {
-                  id: 'heading-1',
-                  type: 'heading',
-                  content: { level: 1, text: 'My Projects' },
-                  styles: {}
-                },
-                {
-                  id: 'grid-1',
                   type: 'grid',
-                  content: {},
-                  styles: {}
+                  category: 'layout',
+                  name: 'Work Gallery',
+                  styles: { className: 'py-16' },
+                  content: {
+                    items: [
+                      { image: '/project1.jpg', title: 'Project 1' },
+                      { image: '/project2.jpg', title: 'Project 2' },
+                      { image: '/project3.jpg', title: 'Project 3' }
+                    ]
+                  }
                 }
               ]
             }
           }
         ]
       }
-    }
-  });
-
-  // E-commerce Template
-  await prisma.template.upsert({
-    where: { id: 'template-ecommerce-1' },
-    update: {},
-    create: {
-      id: 'template-ecommerce-1',
+    },
+    {
       name: 'E-commerce Store',
-      description: 'Full-featured e-commerce template with product listings and cart.',
-      thumbnail: '/templates/ecommerce-store.jpg',
+      description: 'A modern e-commerce template with product listings',
       category: 'E-commerce',
-      tags: ['ecommerce', 'store', 'shop', 'products'],
-      isPublished: true,
-      isPremium: true,
-      price: 29.99,
+      tags: ['ecommerce', 'shop', 'products', 'store'],
       schema: {
         pages: [
           {
             name: 'Home',
             path: '/',
+            isHome: true,
             schema: {
               components: [
                 {
+                  id: 'nav-1',
+                  type: 'navbar',
+                  category: 'navigation',
+                  name: 'Navigation',
+                  styles: { className: 'bg-white shadow-sm' },
+                  content: {
+                    logo: 'Shop',
+                    links: [
+                      { label: 'Home', href: '/' },
+                      { label: 'Products', href: '/products' },
+                      { label: 'Cart', href: '/cart' }
+                    ]
+                  }
+                },
+                {
                   id: 'hero-1',
                   type: 'hero',
+                  category: 'layout',
                   name: 'Hero Banner',
+                  styles: { className: 'py-16 bg-blue-600 text-white' },
                   content: {
                     title: 'Summer Sale',
                     subtitle: 'Up to 50% off on selected items',
                     ctaText: 'Shop Now',
                     ctaLink: '/products'
-                  },
-                  styles: {}
+                  }
                 },
                 {
                   id: 'products-1',
                   type: 'productGrid',
+                  category: 'ecommerce',
                   name: 'Featured Products',
-                  content: {},
-                  styles: {}
-                }
-              ]
-            }
-          },
-          {
-            name: 'Products',
-            path: '/products',
-            schema: {
-              components: [
-                {
-                  id: 'heading-1',
-                  type: 'heading',
-                  content: { level: 1, text: 'All Products' },
-                  styles: {}
-                },
-                {
-                  id: 'productGrid-1',
-                  type: 'productGrid',
-                  name: 'Product Grid',
-                  content: {},
-                  styles: {}
-                }
-              ]
-            }
-          },
-          {
-            name: 'Cart',
-            path: '/cart',
-            schema: {
-              components: [
-                {
-                  id: 'heading-1',
-                  type: 'heading',
-                  content: { level: 1, text: 'Shopping Cart' },
-                  styles: {}
-                },
-                {
-                  id: 'cart-1',
-                  type: 'shoppingCart',
-                  name: 'Cart',
-                  content: {},
-                  styles: {}
+                  styles: { className: 'py-16' },
+                  content: {
+                    products: [
+                      { name: 'Product 1', price: 29.99, image: '/p1.jpg' },
+                      { name: 'Product 2', price: 49.99, image: '/p2.jpg' },
+                      { name: 'Product 3', price: 19.99, image: '/p3.jpg' },
+                      { name: 'Product 4', price: 39.99, image: '/p4.jpg' }
+                    ]
+                  }
                 }
               ]
             }
           }
         ]
       }
-    }
-  });
-
-  // Blog Template
-  await prisma.template.upsert({
-    where: { id: 'template-blog-1' },
-    update: {},
-    create: {
-      id: 'template-blog-1',
-      name: 'Minimal Blog',
-      description: 'Clean and minimal blog template for writers and creators.',
-      thumbnail: '/templates/blog-minimal.jpg',
+    },
+    {
+      name: 'Blog Template',
+      description: 'A clean blog template for content creators',
       category: 'Blog',
-      tags: ['blog', 'minimal', 'writing', 'content'],
-      isPublished: true,
-      isPremium: false,
+      tags: ['blog', 'articles', 'content', 'writing'],
       schema: {
         pages: [
           {
             name: 'Home',
             path: '/',
+            isHome: true,
             schema: {
               components: [
                 {
-                  id: 'heading-1',
-                  type: 'heading',
-                  content: { level: 1, text: 'My Blog' },
-                  styles: {}
+                  id: 'nav-1',
+                  type: 'navbar',
+                  category: 'navigation',
+                  name: 'Navigation',
+                  styles: { className: 'bg-white border-b' },
+                  content: {
+                    logo: 'My Blog',
+                    links: [
+                      { label: 'Home', href: '/' },
+                      { label: 'Articles', href: '/articles' },
+                      { label: 'About', href: '/about' }
+                    ]
+                  }
+                },
+                {
+                  id: 'header-1',
+                  type: 'section',
+                  category: 'layout',
+                  name: 'Header',
+                  styles: { className: 'py-12 text-center' },
+                  content: {
+                    title: 'Welcome to My Blog',
+                    subtitle: 'Thoughts, stories and ideas'
+                  }
                 },
                 {
                   id: 'posts-1',
-                  type: 'blogPosts',
-                  name: 'Blog Posts',
-                  content: {},
-                  styles: {}
-                }
-              ]
-            }
-          },
-          {
-            name: 'Post',
-            path: '/blog/[slug]',
-            schema: {
-              components: [
-                {
-                  id: 'heading-1',
-                  type: 'heading',
-                  content: { level: 1, text: 'Post Title' },
-                  styles: {}
-                },
-                {
-                  id: 'content-1',
-                  type: 'paragraph',
-                  content: { text: 'Blog post content...' },
-                  styles: {}
+                  type: 'grid',
+                  category: 'layout',
+                  name: 'Recent Posts',
+                  styles: { className: 'py-12' },
+                  content: {
+                    posts: [
+                      { title: 'Post Title 1', excerpt: 'Lorem ipsum dolor sit amet...', date: '2024-01-15' },
+                      { title: 'Post Title 2', excerpt: 'Consectetur adipiscing elit...', date: '2024-01-10' },
+                      { title: 'Post Title 3', excerpt: 'Sed do eiusmod tempor...', date: '2024-01-05' }
+                    ]
+                  }
                 }
               ]
             }
           }
         ]
       }
-    }
-  });
-
-  // Landing Page Template
-  await prisma.template.upsert({
-    where: { id: 'template-landing-1' },
-    update: {},
-    create: {
-      id: 'template-landing-1',
-      name: 'Product Landing',
-      description: 'High-converting landing page template for product launches.',
-      thumbnail: '/templates/landing-product.jpg',
-      category: 'Landing Page',
-      tags: ['landing', 'product', 'launch', 'conversion'],
-      isPublished: true,
-      isPremium: true,
-      price: 19.99,
+    },
+    {
+      name: 'SaaS Landing',
+      description: 'A conversion-focused SaaS landing page template',
+      category: 'Business',
+      tags: ['saas', 'landing', 'startup', 'app'],
       schema: {
         pages: [
           {
             name: 'Home',
             path: '/',
+            isHome: true,
             schema: {
               components: [
                 {
+                  id: 'nav-1',
+                  type: 'navbar',
+                  category: 'navigation',
+                  name: 'Navigation',
+                  styles: { className: 'bg-white' },
+                  content: {
+                    logo: 'SaaS App',
+                    links: [
+                      { label: 'Features', href: '#features' },
+                      { label: 'Pricing', href: '#pricing' },
+                      { label: 'Contact', href: '#contact' }
+                    ],
+                    cta: { text: 'Start Free Trial', href: '/signup' }
+                  }
+                },
+                {
                   id: 'hero-1',
                   type: 'hero',
+                  category: 'layout',
                   name: 'Hero',
+                  styles: { className: 'py-24 bg-gradient-to-br from-indigo-500 to-purple-600 text-white' },
                   content: {
-                    title: 'Introducing Product X',
-                    subtitle: 'The future of innovation',
-                    ctaText: 'Pre-order Now',
-                    ctaLink: '#order'
-                  },
-                  styles: {}
+                    title: 'Build Better Products Faster',
+                    subtitle: 'The all-in-one platform for modern teams',
+                    ctaText: 'Start Free Trial',
+                    ctaLink: '/signup'
+                  }
                 },
                 {
                   id: 'features-1',
                   type: 'cards',
+                  category: 'layout',
                   name: 'Features',
+                  styles: { className: 'py-20' },
                   content: {
                     cards: [
-                      { title: 'Feature 1', description: 'Description here' },
-                      { title: 'Feature 2', description: 'Description here' },
-                      { title: 'Feature 3', description: 'Description here' }
+                      { title: 'Analytics', description: 'Real-time insights into your business', icon: 'chart' },
+                      { title: 'Automation', description: 'Automate repetitive tasks', icon: 'zap' },
+                      { title: 'Collaboration', description: 'Work together seamlessly', icon: 'users' }
                     ]
-                  },
-                  styles: {}
+                  }
                 },
                 {
-                  id: 'testimonials-1',
+                  id: 'pricing-1',
                   type: 'cards',
-                  name: 'Testimonials',
+                  category: 'layout',
+                  name: 'Pricing',
+                  styles: { className: 'py-20 bg-gray-50' },
                   content: {
                     cards: [
-                      { title: 'John D.', description: 'Amazing product!' },
-                      { title: 'Sarah M.', description: 'Highly recommended!' }
+                      { title: 'Starter', price: '$0', description: 'For individuals', features: ['1 user', '5 projects', 'Basic support'] },
+                      { title: 'Pro', price: '$29', description: 'For small teams', features: ['5 users', 'Unlimited projects', 'Priority support'] },
+                      { title: 'Enterprise', price: '$99', description: 'For large teams', features: ['Unlimited users', 'Custom integrations', '24/7 support'] }
                     ]
-                  },
-                  styles: {}
+                  }
                 }
               ]
             }
@@ -390,24 +371,36 @@ async function main() {
         ]
       }
     }
-  });
+  ];
+
+  for (const templateData of templates) {
+    const existing = await prisma.template.findFirst({
+      where: { name: templateData.name }
+    });
+    
+    if (existing) {
+      await prisma.template.update({
+        where: { id: existing.id },
+        data: templateData as any
+      });
+    } else {
+      await prisma.template.create({
+        data: templateData as any
+      });
+    }
+    console.log(`✓ Created template: ${templateData.name}`);
+  }
 
   // ============================================
   // PLUGINS
   // ============================================
 
-  // Google Analytics Plugin
-  await prisma.plugin.upsert({
-    where: { id: 'plugin-analytics-ga' },
-    update: {},
-    create: {
-      id: 'plugin-analytics-ga',
+  const plugins = [
+    {
       name: 'Google Analytics',
-      description: 'Add Google Analytics tracking to your website.',
-      version: '1.0.0',
+      description: 'Add Google Analytics tracking to your website',
       type: 'ANALYTICS',
-      isPublished: true,
-      isPremium: false,
+      version: '1.0.0',
       manifest: {
         name: 'Google Analytics',
         version: '1.0.0',
@@ -415,211 +408,266 @@ async function main() {
           trackingId: {
             type: 'string',
             label: 'Tracking ID',
-            placeholder: 'G-XXXXXXXXXX',
-            required: true
+            default: 'G-XXXXXXXXXX'
           }
         },
         inject: {
-          head: '<script async src="https://www.googletagmanager.com/gtag/js?id={{trackingId}}"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("js",new Date());gtag("config","{{trackingId}}");</script>'
+          head: `
+<!-- Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id={{trackingId}}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', '{{trackingId}}');
+</script>
+`
         }
       }
-    }
-  });
-
-  // Contact Form Plugin
-  await prisma.plugin.upsert({
-    where: { id: 'plugin-form-contact' },
-    update: {},
-    create: {
-      id: 'plugin-form-contact',
+    },
+    {
       name: 'Contact Form',
-      description: 'Add a contact form component to your pages.',
-      version: '1.0.0',
+      description: 'Add a contact form component to your pages',
       type: 'COMPONENT',
-      isPublished: true,
-      isPremium: false,
+      version: '1.0.0',
       manifest: {
         name: 'Contact Form',
-        category: 'Forms'
-      },
-      schema: {
-        name: 'Contact Form',
-        type: 'contactForm',
-        category: 'Forms',
-        props: {
-          submitUrl: { type: 'string', label: 'Submit URL' },
-          successMessage: { type: 'string', label: 'Success Message', default: 'Message sent!' },
-          fields: {
-            type: 'array',
-            label: 'Fields',
-            items: {
-              name: { type: 'string' },
-              type: { type: 'select', options: ['text', 'email', 'textarea'] },
-              required: { type: 'boolean' }
-            }
+        version: '1.0.0',
+        component: {
+          type: 'contactForm',
+          category: 'forms',
+          props: {
+            action: { type: 'string', default: '/api/contact' },
+            fields: { 
+              type: 'array', 
+              default: ['name', 'email', 'message'] 
+            },
+            submitText: { type: 'string', default: 'Send Message' }
           }
         }
-      }
-    }
-  });
-
-  // Stripe Payment Plugin
-  await prisma.plugin.upsert({
-    where: { id: 'plugin-payment-stripe' },
-    update: {},
-    create: {
-      id: 'plugin-payment-stripe',
-      name: 'Stripe Payments',
-      description: 'Accept payments with Stripe integration.',
-      version: '1.0.0',
-      type: 'INTEGRATION',
-      isPublished: true,
-      isPremium: true,
-      price: 9.99,
-      manifest: {
-        name: 'Stripe Payments',
-        version: '1.0.0',
-        settings: {
-          publishableKey: { type: 'string', label: 'Publishable Key', required: true },
-          secretKey: { type: 'string', label: 'Secret Key', required: true, secret: true }
+      },
+      schema: {
+        type: 'contactForm',
+        category: 'forms',
+        name: 'Contact Form',
+        styles: { className: 'max-w-md mx-auto' },
+        content: {
+          fields: [
+            { name: 'name', label: 'Name', type: 'text', required: true },
+            { name: 'email', label: 'Email', type: 'email', required: true },
+            { name: 'message', label: 'Message', type: 'textarea', required: true }
+          ],
+          submitText: 'Send Message'
         }
       }
-    }
-  });
-
-  // SEO Meta Plugin
-  await prisma.plugin.upsert({
-    where: { id: 'plugin-seo-meta' },
-    update: {},
-    create: {
-      id: 'plugin-seo-meta',
-      name: 'SEO Meta Tags',
-      description: 'Advanced SEO meta tag management.',
+    },
+    {
+      name: 'Stripe Payment',
+      description: 'Accept payments with Stripe integration',
+      type: 'INTEGRATION',
       version: '1.0.0',
+      manifest: {
+        name: 'Stripe Payment',
+        version: '1.0.0',
+        settings: {
+          publishableKey: { type: 'string', label: 'Publishable Key' },
+          secretKey: { type: 'string', label: 'Secret Key', secret: true }
+        },
+        apiRoutes: [
+          {
+            path: '/api/create-checkout-session',
+            method: 'POST',
+            handler: 'stripe'
+          }
+        ]
+      }
+    },
+    {
+      name: 'SEO Meta Tags',
+      description: 'Advanced SEO meta tag management',
       type: 'FEATURE',
-      isPublished: true,
-      isPremium: false,
+      version: '1.0.0',
       manifest: {
         name: 'SEO Meta Tags',
         version: '1.0.0',
-        features: ['openGraph', 'twitterCards', 'schema.org', 'canonical'],
+        features: [
+          'Open Graph tags',
+          'Twitter Card tags',
+          'JSON-LD structured data',
+          'Canonical URLs',
+          'Robots meta'
+        ],
         settings: {
-          autoGenerateSitemap: { type: 'boolean', label: 'Auto-generate sitemap', default: true },
-          robotsTxt: { type: 'boolean', label: 'Generate robots.txt', default: true }
+          defaultTitle: { type: 'string', label: 'Default Title' },
+          defaultDescription: { type: 'string', label: 'Default Description' },
+          defaultImage: { type: 'string', label: 'Default OG Image' },
+          twitterHandle: { type: 'string', label: 'Twitter Handle' }
         }
       }
-    }
-  });
-
-  // Newsletter Plugin
-  await prisma.plugin.upsert({
-    where: { id: 'plugin-newsletter' },
-    update: {},
-    create: {
-      id: 'plugin-newsletter',
+    },
+    {
       name: 'Newsletter Signup',
-      description: 'Email newsletter subscription component.',
-      version: '1.0.0',
+      description: 'Email newsletter subscription component',
       type: 'COMPONENT',
-      isPublished: true,
-      isPremium: false,
+      version: '1.0.0',
       manifest: {
         name: 'Newsletter Signup',
-        category: 'Forms'
+        version: '1.0.0',
+        component: {
+          type: 'newsletter',
+          category: 'forms',
+          props: {
+            provider: { 
+              type: 'select', 
+              options: ['mailchimp', 'convertkit', 'custom'],
+              default: 'mailchimp'
+            },
+            apiUrl: { type: 'string', label: 'API URL' },
+            placeholder: { type: 'string', default: 'Enter your email' }
+          }
+        }
       },
       schema: {
-        name: 'Newsletter Signup',
         type: 'newsletter',
-        category: 'Forms',
-        props: {
-          provider: { type: 'select', options: ['mailchimp', 'convertkit', 'custom'], label: 'Provider' },
-          formAction: { type: 'string', label: 'Form Action URL' },
-          placeholder: { type: 'string', label: 'Email Placeholder', default: 'Enter your email' }
+        category: 'forms',
+        name: 'Newsletter Signup',
+        styles: { className: 'max-w-sm' },
+        content: {
+          title: 'Subscribe to our newsletter',
+          description: 'Get the latest updates and news',
+          placeholder: 'Enter your email',
+          buttonText: 'Subscribe'
         }
       }
-    }
-  });
-
-  // Social Share Plugin
-  await prisma.plugin.upsert({
-    where: { id: 'plugin-social-share' },
-    update: {},
-    create: {
-      id: 'plugin-social-share',
-      name: 'Social Share Buttons',
-      description: 'Add social media sharing buttons.',
+    },
+    {
+      name: 'Live Chat',
+      description: 'Add live chat support to your website',
+      type: 'INTEGRATION',
       version: '1.0.0',
-      type: 'COMPONENT',
-      isPublished: true,
-      isPremium: false,
       manifest: {
-        name: 'Social Share Buttons',
-        category: 'Social'
+        name: 'Live Chat',
+        version: '1.0.0',
+        settings: {
+          provider: {
+            type: 'select',
+            options: ['intercom', 'zendesk', 'crisp', 'custom'],
+            default: 'crisp'
+          },
+          widgetId: { type: 'string', label: 'Widget ID' }
+        },
+        inject: {
+          body: `
+<!-- Live Chat Widget -->
+<script>
+  window.CRISP_WEBSITE_ID = "{{widgetId}}";
+  (function() {
+    var d = document;
+    var s = d.createElement("script");
+    s.src = "https://client.crisp.chat/l.js";
+    s.async = 1;
+    d.getElementsByTagName("head")[0].appendChild(s);
+  })();
+</script>
+`
+        }
+      }
+    },
+    {
+      name: 'Image Gallery',
+      description: 'Beautiful image gallery with lightbox',
+      type: 'COMPONENT',
+      version: '1.0.0',
+      manifest: {
+        name: 'Image Gallery',
+        version: '1.0.0',
+        component: {
+          type: 'gallery',
+          category: 'media',
+          props: {
+            layout: { 
+              type: 'select', 
+              options: ['grid', 'masonry', 'carousel'],
+              default: 'grid'
+            },
+            columns: { type: 'number', default: 3 },
+            lightbox: { type: 'boolean', default: true }
+          }
+        }
       },
       schema: {
-        name: 'Social Share',
-        type: 'socialShare',
-        category: 'Social',
-        props: {
-          platforms: { type: 'array', label: 'Platforms', default: ['twitter', 'facebook', 'linkedin'] },
-          layout: { type: 'select', options: ['horizontal', 'vertical'], default: 'horizontal' }
+        type: 'gallery',
+        category: 'media',
+        name: 'Image Gallery',
+        styles: { className: 'grid grid-cols-3 gap-4' },
+        content: {
+          images: [],
+          layout: 'grid',
+          lightbox: true
         }
       }
-    }
-  });
-
-  // Cookie Consent Plugin
-  await prisma.plugin.upsert({
-    where: { id: 'plugin-cookie-consent' },
-    update: {},
-    create: {
-      id: 'plugin-cookie-consent',
-      name: 'Cookie Consent',
-      description: 'GDPR-compliant cookie consent banner.',
+    },
+    {
+      name: 'Testimonials',
+      description: 'Customer testimonials and reviews component',
+      type: 'COMPONENT',
       version: '1.0.0',
-      type: 'FEATURE',
-      isPublished: true,
-      isPremium: false,
       manifest: {
-        name: 'Cookie Consent',
+        name: 'Testimonials',
         version: '1.0.0',
-        settings: {
-          message: { type: 'string', label: 'Banner Message', default: 'We use cookies to improve your experience.' },
-          acceptText: { type: 'string', label: 'Accept Button Text', default: 'Accept' },
-          declineText: { type: 'string', label: 'Decline Button Text', default: 'Decline' }
+        component: {
+          type: 'testimonials',
+          category: 'content',
+          props: {
+            layout: { 
+              type: 'select', 
+              options: ['grid', 'carousel', 'list'],
+              default: 'grid'
+            },
+            showRatings: { type: 'boolean', default: true }
+          }
+        }
+      },
+      schema: {
+        type: 'testimonials',
+        category: 'content',
+        name: 'Testimonials',
+        styles: { className: 'py-16' },
+        content: {
+          testimonials: [
+            { 
+              name: 'John D.', 
+              role: 'CEO, Company', 
+              text: 'Amazing product! Highly recommended.',
+              rating: 5,
+              image: '/avatar1.jpg'
+            }
+          ],
+          showRatings: true
         }
       }
     }
-  });
+  ];
 
-  // Live Chat Plugin
-  await prisma.plugin.upsert({
-    where: { id: 'plugin-live-chat' },
-    update: {},
-    create: {
-      id: 'plugin-live-chat',
-      name: 'Live Chat Widget',
-      description: 'Add live chat support to your website.',
-      version: '1.0.0',
-      type: 'INTEGRATION',
-      isPublished: true,
-      isPremium: true,
-      price: 14.99,
-      manifest: {
-        name: 'Live Chat Widget',
-        version: '1.0.0',
-        providers: ['intercom', 'zendesk', 'crisp', 'custom'],
-        settings: {
-          provider: { type: 'select', options: ['intercom', 'zendesk', 'crisp', 'custom'], label: 'Provider' },
-          apiKey: { type: 'string', label: 'API Key', required: true }
-        }
-      }
+  for (const pluginData of plugins) {
+    const existing = await prisma.plugin.findFirst({
+      where: { name: pluginData.name }
+    });
+    
+    if (existing) {
+      await prisma.plugin.update({
+        where: { id: existing.id },
+        data: pluginData as any
+      });
+    } else {
+      await prisma.plugin.create({
+        data: pluginData as any
+      });
     }
-  });
+    console.log(`✓ Created plugin: ${pluginData.name}`);
+  }
 
-  console.log('✅ Seeding completed!');
-  console.log('📦 Templates created: 5');
-  console.log('🔌 Plugins created: 8');
+  console.log('✅ Database seeding completed successfully!');
 }
 
 main()

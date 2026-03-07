@@ -1,6 +1,8 @@
-// API: Project Collaborators - List and Invite
-// GET /api/projects/[id]/collaborators - List all collaborators
-// POST /api/projects/[id]/collaborators - Invite a collaborator
+// API: Project Collaborators - List, Invite, Update, Remove
+// GET /api/projects/:id/collaborators - List all collaborators
+// POST /api/projects/:id/collaborators - Invite collaborator
+// PUT /api/projects/:id/collaborators/:userId - Update role
+// DELETE /api/projects/:id/collaborators/:userId - Remove collaborator
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -25,23 +27,19 @@ const getCurrentUser = async () => {
 const checkProjectAccess = async (projectId: string, userId: string) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { collaborations: true }
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
   });
 
-  if (!project) return { allowed: false, reason: 'Project not found' };
-
-  const isOwner = project.ownerId === userId;
-  const isCollaborator = project.collaborations.some(
-    c => c.userId === userId && c.acceptedAt !== null
-  );
-
-  if (!isOwner && !isCollaborator) {
-    return { allowed: false, reason: 'Access denied' };
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
   }
-
-  const role = isOwner ? 'OWNER' : project.collaborations.find(c => c.userId === userId)?.role;
-
-  return { allowed: true, role };
+  return null;
 };
 
 export async function GET(
@@ -50,49 +48,50 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const collaborations = await prisma.collaboration.findMany({
+      where: { projectId: id },
       include: {
-        owner: {
-          select: { id: true, name: true, email: true, image: true }
-        },
-        collaborations: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true, image: true }
-            }
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true
           }
         }
       }
     });
 
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found' },
-        { status: 404 }
-      );
-    }
+    // Include owner as a collaborator
+    const owner = await prisma.user.findUnique({
+      where: { id: project.ownerId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true
+      }
+    });
 
-    // Format collaborators list with owner first
     const collaborators = [
       {
-        user: project.owner,
-        role: 'OWNER' as const,
+        user: owner,
+        role: 'OWNER',
         invitedAt: project.createdAt,
         acceptedAt: project.createdAt
       },
-      ...project.collaborations.map(c => ({
+      ...collaborations.map(c => ({
         user: c.user,
         role: c.role,
         invitedAt: c.invitedAt,
@@ -102,7 +101,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: collaborators
+      data: { collaborators }
     });
   } catch (error) {
     console.error('Error fetching collaborators:', error);
@@ -119,23 +118,23 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId } = await params;
+    const { id } = await params;
     const body = await request.json();
     const { email, role = 'EDITOR' } = body;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
-    // Only owner and admin can invite collaborators
-    if (access.role !== 'OWNER' && access.role !== 'ADMIN') {
+    // Only owner or admin can invite collaborators
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
       return NextResponse.json(
-        { success: false, error: 'Permission denied to invite collaborators' },
+        { success: false, error: 'Insufficient permissions' },
         { status: 403 }
       );
     }
@@ -143,6 +142,15 @@ export async function POST(
     if (!email) {
       return NextResponse.json(
         { success: false, error: 'Email is required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate role
+    const validRoles = ['ADMIN', 'EDITOR', 'VIEWER'];
+    if (!validRoles.includes(role)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid role' },
         { status: 400 }
       );
     }
@@ -164,7 +172,7 @@ export async function POST(
     // Check if already a collaborator
     const existing = await prisma.collaboration.findFirst({
       where: {
-        projectId,
+        projectId: id,
         userId: targetUser.id
       }
     });
@@ -176,27 +184,38 @@ export async function POST(
       );
     }
 
+    // Cannot invite owner
+    if (targetUser.id === project.ownerId) {
+      return NextResponse.json(
+        { success: false, error: 'User is already the project owner' },
+        { status: 400 }
+      );
+    }
+
     // Create collaboration
     const collaboration = await prisma.collaboration.create({
       data: {
-        projectId,
+        projectId: id,
         userId: targetUser.id,
         role: role as any,
         invitedAt: new Date()
       },
       include: {
         user: {
-          select: { id: true, name: true, email: true, image: true }
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true
+          }
         }
       }
     });
 
-    // TODO: Send invitation email
-
     return NextResponse.json({
       success: true,
       data: collaboration,
-      message: `Invitation sent to ${email}`
+      message: 'Collaborator invited successfully'
     }, { status: 201 });
   } catch (error) {
     console.error('Error inviting collaborator:', error);

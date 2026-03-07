@@ -1,6 +1,6 @@
 // API: Templates - List and Create
 // GET /api/templates - List all templates
-// POST /api/templates - Create a new template
+// POST /api/templates - Create template
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -27,10 +27,10 @@ export async function GET(
 ) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const category = searchParams.get('category');
-    const tags = searchParams.get('tags')?.split(',').filter(Boolean);
-    const isPremium = searchParams.get('premium');
-    const search = searchParams.get('search');
+    const category = searchParams.get('category') || undefined;
+    const tags = searchParams.get('tags')?.split(',') || undefined;
+    const premium = searchParams.get('premium');
+    const search = searchParams.get('search') || undefined;
 
     const where: any = { isPublished: true };
 
@@ -44,8 +44,8 @@ export async function GET(
       };
     }
 
-    if (isPremium !== null && isPremium !== undefined) {
-      where.isPremium = isPremium === 'true';
+    if (premium !== null && premium !== undefined) {
+      where.isPremium = premium === 'true';
     }
 
     if (search) {
@@ -57,17 +57,7 @@ export async function GET(
 
     const templates = await prisma.template.findMany({
       where,
-      orderBy: { installs: 'desc' },
-      include: {
-        projects: {
-          select: {
-            id: true,
-            name: true,
-            thumbnail: true
-          },
-          take: 3
-        }
-      }
+      orderBy: { installs: 'desc' }
     });
 
     return NextResponse.json({
@@ -89,7 +79,6 @@ export async function POST(
   try {
     const user = await getCurrentUser();
     const body = await request.json();
-
     const {
       name,
       description,
@@ -98,19 +87,12 @@ export async function POST(
       tags = [],
       schema,
       isPremium = false,
-      price = 0
+      price
     } = body;
 
-    if (!name) {
+    if (!name || !schema) {
       return NextResponse.json(
-        { success: false, error: 'Template name is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!schema) {
-      return NextResponse.json(
-        { success: false, error: 'Template schema is required' },
+        { success: false, error: 'Name and schema are required' },
         { status: 400 }
       );
     }
@@ -124,8 +106,7 @@ export async function POST(
         tags,
         schema,
         isPremium,
-        price: typeof price === 'number' ? price : 0,
-        isPublished: false // Default to unpublished, requires admin approval
+        price: isPremium ? price || 0 : 0
       }
     });
 

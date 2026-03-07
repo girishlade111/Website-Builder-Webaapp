@@ -1,6 +1,6 @@
-// API: Real-time Collaboration
-// GET /api/collaboration/[projectId] - Get collaboration state
-// POST /api/collaboration/[projectId] - Update collaboration state (Yjs sync)
+// API: Collaboration - Real-time collaboration state
+// GET /api/collaboration/:projectId - Get collaboration state
+// POST /api/collaboration/:projectId - Update collaboration state
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -25,21 +25,19 @@ const getCurrentUser = async () => {
 const checkProjectAccess = async (projectId: string, userId: string) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { collaborations: true }
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
   });
 
-  if (!project) return { allowed: false, reason: 'Project not found' };
-
-  const isOwner = project.ownerId === userId;
-  const isCollaborator = project.collaborations.some(
-    c => c.userId === userId && c.acceptedAt !== null
-  );
-
-  if (!isOwner && !isCollaborator) {
-    return { allowed: false, reason: 'Access denied' };
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
   }
-
-  return { allowed: true };
+  return null;
 };
 
 export async function GET(
@@ -50,47 +48,75 @@ export async function GET(
     const user = await getCurrentUser();
     const { projectId } = await params;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(projectId, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
-    // Get collaboration session
+    // Get or create collaboration session
     let session = await prisma.collaborationSession.findUnique({
       where: { projectId }
     });
 
+    if (!session) {
+      session = await prisma.collaborationSession.create({
+        data: {
+          projectId,
+          yjsState: null,
+          cursors: {}
+        }
+      });
+    }
+
     // Get active collaborators
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const collaborations = await prisma.collaboration.findMany({
+      where: { projectId },
       include: {
-        collaborations: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true, image: true }
-            }
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true
           }
         }
       }
     });
 
-    const collaborators = project?.collaborations.map(c => ({
-      userId: c.userId,
-      user: c.user,
-      role: c.role,
-      cursor: (session?.cursors as any)?.[c.userId] || null
-    })) || [];
+    // Include owner
+    const owner = await prisma.user.findUnique({
+      where: { id: project.ownerId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true
+      }
+    });
+
+    const collaborators = [
+      {
+        user: owner,
+        role: 'OWNER',
+        cursor: null
+      },
+      ...collaborations.map(c => ({
+        user: c.user,
+        role: c.role,
+        cursor: (session.cursors as any)?.[c.userId] || null
+      }))
+    ];
 
     return NextResponse.json({
       success: true,
       data: {
-        sessionId: session?.id || null,
-        yjsState: session?.yjsState ? Array.from(new Uint8Array(session.yjsState)) : null,
-        cursors: session?.cursors || {},
+        sessionId: session.id,
+        yjsState: session.yjsState,
+        cursors: session.cursors || {},
         collaborators
       }
     });
@@ -113,16 +139,16 @@ export async function POST(
     const body = await request.json();
     const { yjsUpdate, cursor, presence } = body;
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(projectId, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
-    // Get or create collaboration session
+    // Get or create session
     let session = await prisma.collaborationSession.findUnique({
       where: { projectId }
     });
@@ -131,40 +157,47 @@ export async function POST(
       session = await prisma.collaborationSession.create({
         data: {
           projectId,
-          yjsState: yjsUpdate ? Buffer.from(new Uint8Array(yjsUpdate)) : null,
-          cursors: cursor ? { [user.id]: cursor } : {}
+          yjsState: null,
+          cursors: {}
         }
       });
-    } else {
-      // Update session
-      const updates: any = {};
-
-      if (yjsUpdate) {
-        // Merge Yjs updates
-        const currentState = session.yjsState ? new Uint8Array(session.yjsState) : new Uint8Array();
-        const newState = new Uint8Array(yjsUpdate);
-        // In production, properly merge Yjs states
-        updates.yjsState = Buffer.from(newState);
-      }
-
-      if (cursor) {
-        const currentCursors = (session.cursors as any) || {};
-        updates.cursors = { ...currentCursors, [user.id]: cursor };
-      }
-
-      if (Object.keys(updates).length > 0) {
-        session = await prisma.collaborationSession.update({
-          where: { projectId },
-          data: updates
-        });
-      }
     }
 
-    // Get current cursors for broadcasting to other users
+    // Update session
+    const updateData: any = {};
+
+    if (yjsUpdate) {
+      // Merge Yjs updates
+      updateData.yjsState = Buffer.from(yjsUpdate);
+    }
+
+    if (cursor) {
+      // Update cursor position for current user
+      const cursors = (session.cursors as any) || {};
+      cursors[user.id] = {
+        ...cursor,
+        userId: user.id,
+        userName: user.name || user.email,
+        updatedAt: new Date()
+      };
+      updateData.cursors = cursors;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      session = await prisma.collaborationSession.update({
+        where: { projectId },
+        data: updateData
+      });
+    }
+
+    // Get other collaborators' cursors (exclude current user)
+    const otherCursors: Record<string, any> = {};
     const cursors = (session.cursors as any) || {};
-    const otherCursors = Object.fromEntries(
-      Object.entries(cursors).filter(([userId]) => userId !== user.id)
-    );
+    for (const [userId, cursorData] of Object.entries(cursors)) {
+      if (userId !== user.id) {
+        otherCursors[userId] = cursorData;
+      }
+    }
 
     return NextResponse.json({
       success: true,
