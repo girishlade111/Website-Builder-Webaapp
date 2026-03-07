@@ -227,17 +227,17 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
 
     try {
       // Load project
-      const projectResponse = await projectsApi.get(projectId);
+      const projectResponse = await projectsApi.getById(projectId);
       if (!projectResponse.success || !projectResponse.data) {
         throw new Error(projectResponse.error || 'Failed to load project');
       }
 
-      const project = projectResponse.data;
-      
+      const project = projectResponse.data as any;
+
       // Load pages
       const pagesResponse = await pagesApi.list(projectId);
       const apiPages = pagesResponse.data || [];
-      
+
       // Convert API pages to frontend Page format
       const pages: Page[] = apiPages.map((p: any) => {
         const schema = p.schema as PageSchema;
@@ -254,7 +254,7 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
 
       set({
         projectId,
-        project,
+        project: project as any,
         pages,
         currentPage,
         currentPageId: currentPage?.id || null,
@@ -277,7 +277,7 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const response = await pagesApi.get(get().projectId!, pageId);
+      const response = await pagesApi.getById(get().projectId!, pageId);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to load page');
       }
@@ -735,7 +735,7 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
     if (!state.projectId) return false;
 
     try {
-      const response = await versionsApi.create(state.projectId, { message });
+      const response = await versionsApi.create(state.projectId, message);
       return response.success || false;
     } catch (error: any) {
       set({ error: error.message || 'Failed to create version' });

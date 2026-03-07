@@ -1,9 +1,19 @@
-// API: Project Versions - List and Create
-// GET /api/projects/[id]/versions - List all versions
-// POST /api/projects/[id]/versions - Create a new version
+// API: API Integrations - List, Create, Update, Delete, Test
+// GET /api/projects/[id]/api-integrations - List all API integrations
+// POST /api/projects/[id]/api-integrations - Create API integration
+// PUT /api/projects/[id]/api-integrations/[integrationId] - Update integration
+// DELETE /api/projects/[id]/api-integrations/[integrationId] - Delete integration
+// POST /api/projects/[id]/api-integrations/[integrationId]/test - Test integration
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import {
+  executeApiRequest,
+  createApiIntegration as createIntegration,
+  updateApiIntegration as updateIntegration,
+  deleteApiIntegration as deleteIntegration,
+  listApiIntegrations
+} from '@/lib/services/apiIntegration';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -39,7 +49,9 @@ const checkProjectAccess = async (projectId: string, userId: string) => {
     return { allowed: false, reason: 'Access denied' };
   }
 
-  return { allowed: true };
+  const role = isOwner ? 'OWNER' : project.collaborations.find(c => c.userId === userId)?.role;
+
+  return { allowed: true, role };
 };
 
 export async function GET(
@@ -59,24 +71,16 @@ export async function GET(
       );
     }
 
-    const versions = await prisma.projectVersion.findMany({
-      where: { projectId },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true }
-        }
-      },
-      orderBy: { version: 'desc' }
-    });
+    const integrations = await listApiIntegrations(projectId);
 
     return NextResponse.json({
       success: true,
-      data: versions
+      data: integrations
     });
   } catch (error) {
-    console.error('Error fetching versions:', error);
+    console.error('Error fetching API integrations:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch versions' },
+      { success: false, error: 'Failed to fetch API integrations' },
       { status: 500 }
     );
   }
@@ -90,7 +94,6 @@ export async function POST(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
     const body = await request.json();
-    const { message } = body || {};
 
     // Check access
     const access = await checkProjectAccess(projectId, user.id);
@@ -101,61 +104,50 @@ export async function POST(
       );
     }
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: { pages: true }
-    });
-
-    if (!project) {
+    // Check if user has edit permission
+    if (access.role !== 'OWNER' && access.role !== 'ADMIN' && access.role !== 'EDITOR') {
       return NextResponse.json(
-        { success: false, error: 'Project not found' },
-        { status: 404 }
+        { success: false, error: 'Edit permission denied' },
+        { status: 403 }
       );
     }
 
-    // Get current version count
-    const versionCount = await prisma.projectVersion.count({
-      where: { projectId }
-    });
+    const {
+      name,
+      endpoint,
+      method = 'GET',
+      headers = {},
+      authType = 'NONE',
+      authConfig = {},
+      responseMapping = {}
+    } = body;
 
-    // Create version snapshot
-    const version = await prisma.projectVersion.create({
-      data: {
-        projectId,
-        version: versionCount + 1,
-        message: message || 'Manual version save',
-        snapshot: {
-          project: {
-            id: project.id,
-            name: project.name,
-            description: project.description,
-            settings: project.settings
-          },
-          pages: project.pages.map(p => ({
-            id: p.id,
-            name: p.name,
-            path: p.path,
-            schema: p.schema as any
-          }))
-        },
-        createdById: user.id
-      },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true }
-        }
-      }
+    if (!name || !endpoint) {
+      return NextResponse.json(
+        { success: false, error: 'Name and endpoint are required' },
+        { status: 400 }
+      );
+    }
+
+    const integration = await createIntegration(projectId, {
+      name,
+      endpoint,
+      method,
+      headers,
+      authType: authType as any,
+      authConfig,
+      responseMapping
     });
 
     return NextResponse.json({
       success: true,
-      data: version,
-      message: 'Version created successfully'
+      data: integration,
+      message: 'API integration created successfully'
     }, { status: 201 });
   } catch (error) {
-    console.error('Error creating version:', error);
+    console.error('Error creating API integration:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to create version' },
+      { success: false, error: 'Failed to create API integration' },
       { status: 500 }
     );
   }

@@ -1,10 +1,9 @@
-// API: Templates
+// API: Templates - List and Create
 // GET /api/templates - List all templates
 // POST /api/templates - Create a new template
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { templates as defaultTemplates } from '@/templates';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -23,55 +22,57 @@ const getCurrentUser = async () => {
   return user;
 };
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest
+) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const category = searchParams.get('category');
+    const tags = searchParams.get('tags')?.split(',').filter(Boolean);
+    const isPremium = searchParams.get('premium');
     const search = searchParams.get('search');
 
-    // Get templates from database
-    let dbTemplates = await prisma.template.findMany({
-      where: { isPublished: true }
-    });
+    const where: any = { isPublished: true };
 
-    // Combine with default templates
-    const allTemplates = [
-      ...defaultTemplates.map(t => ({
-        id: t.id,
-        name: t.name,
-        description: t.description,
-        thumbnail: t.thumbnail,
-        category: t.category,
-        tags: [],
-        isPremium: false,
-        isBuiltIn: true,
-        pages: t.pages
-      })),
-      ...dbTemplates.map(t => ({
-        ...t,
-        createdAt: t.createdAt.toISOString(),
-        updatedAt: t.updatedAt.toISOString()
-      }))
-    ];
-
-    // Filter by category
-    let filtered = allTemplates;
-    if (category && category !== 'All') {
-      filtered = filtered.filter(t => t.category === category);
+    if (category) {
+      where.category = category;
     }
 
-    // Filter by search
+    if (tags && tags.length > 0) {
+      where.tags = {
+        hasSome: tags
+      };
+    }
+
+    if (isPremium !== null && isPremium !== undefined) {
+      where.isPremium = isPremium === 'true';
+    }
+
     if (search) {
-      const searchLower = search.toLowerCase();
-      filtered = filtered.filter(t =>
-        t.name.toLowerCase().includes(searchLower) ||
-        t.description?.toLowerCase().includes(searchLower)
-      );
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } }
+      ];
     }
+
+    const templates = await prisma.template.findMany({
+      where,
+      orderBy: { installs: 'desc' },
+      include: {
+        projects: {
+          select: {
+            id: true,
+            name: true,
+            thumbnail: true
+          },
+          take: 3
+        }
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      data: filtered
+      data: templates
     });
   } catch (error) {
     console.error('Error fetching templates:', error);
@@ -82,15 +83,34 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   try {
     const user = await getCurrentUser();
     const body = await request.json();
-    const { name, description, category, tags, schema, isPremium, price } = body;
 
-    if (!name || !schema) {
+    const {
+      name,
+      description,
+      thumbnail,
+      category,
+      tags = [],
+      schema,
+      isPremium = false,
+      price = 0
+    } = body;
+
+    if (!name) {
       return NextResponse.json(
-        { success: false, error: 'Name and schema are required' },
+        { success: false, error: 'Template name is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!schema) {
+      return NextResponse.json(
+        { success: false, error: 'Template schema is required' },
         { status: 400 }
       );
     }
@@ -99,11 +119,13 @@ export async function POST(request: NextRequest) {
       data: {
         name,
         description,
+        thumbnail,
         category,
-        tags: tags || [],
+        tags,
         schema,
-        isPremium: isPremium || false,
-        price: price || 0
+        isPremium,
+        price: typeof price === 'number' ? price : 0,
+        isPublished: false // Default to unpublished, requires admin approval
       }
     });
 

@@ -1,4 +1,4 @@
-// API: Plugins
+// API: Plugins - List and Create
 // GET /api/plugins - List all plugins
 // POST /api/plugins - Create a new plugin
 
@@ -22,20 +22,30 @@ const getCurrentUser = async () => {
   return user;
 };
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest
+) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get('type');
-    const published = searchParams.get('published');
+    const isPremium = searchParams.get('premium');
+    const search = searchParams.get('search');
 
-    const where: any = {};
-    
+    const where: any = { isPublished: true };
+
     if (type) {
       where.type = type;
     }
-    
-    if (published === 'true') {
-      where.isPublished = true;
+
+    if (isPremium !== null && isPremium !== undefined) {
+      where.isPremium = isPremium === 'true';
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } }
+      ];
     }
 
     const plugins = await prisma.plugin.findMany({
@@ -56,15 +66,35 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   try {
     const user = await getCurrentUser();
     const body = await request.json();
-    const { name, description, version, type, manifest, code, schema, isPremium, price } = body;
 
-    if (!name || !type || !manifest) {
+    const {
+      name,
+      description,
+      version = '1.0.0',
+      type,
+      manifest,
+      code,
+      schema,
+      isPremium = false,
+      price = 0
+    } = body;
+
+    if (!name) {
       return NextResponse.json(
-        { success: false, error: 'Name, type, and manifest are required' },
+        { success: false, error: 'Plugin name is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!type) {
+      return NextResponse.json(
+        { success: false, error: 'Plugin type is required' },
         { status: 400 }
       );
     }
@@ -73,14 +103,14 @@ export async function POST(request: NextRequest) {
       data: {
         name,
         description,
-        version: version || '1.0.0',
-        type,
-        manifest,
-        code: code || null,
-        schema: schema || null,
-        isPremium: isPremium || false,
-        price: price || 0,
-        isPublished: false
+        version,
+        type: type as any,
+        manifest: manifest || {},
+        code,
+        schema,
+        isPremium,
+        price: typeof price === 'number' ? price : 0,
+        isPublished: false // Default to unpublished
       }
     });
 

@@ -1,92 +1,146 @@
-// Project Settings Service - Handle SEO, domain, analytics, and custom scripts
+// Project Settings Service - SEO, domain, analytics, and more
 
 import prisma from '@/lib/prisma';
-import { ProjectSettings, SEOSettings, DomainSettings, AnalyticsSettings, CustomScripts } from '@/types/backend';
+
+export interface ProjectSettings {
+  seo: SeoSettings;
+  domain: DomainSettings;
+  analytics: AnalyticsSettings;
+  scripts: ScriptSettings;
+  social: SocialSettings;
+}
+
+export interface SeoSettings {
+  title: string;
+  description: string;
+  keywords: string[];
+  ogImage?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  twitterCard?: 'summary' | 'summary_large_image';
+  robots?: string;
+  canonical?: string;
+  favicon?: string;
+}
+
+export interface DomainSettings {
+  customDomain?: string;
+  redirectWww?: boolean;
+  forceHttps?: boolean;
+}
+
+export interface AnalyticsSettings {
+  googleAnalyticsId?: string;
+  plausibleDomain?: string;
+  umamiWebsiteId?: string;
+  customScript?: string;
+}
+
+export interface ScriptSettings {
+  headScripts?: string[];
+  bodyScripts?: string[];
+}
+
+export interface SocialSettings {
+  twitterHandle?: string;
+  facebookAppId?: string;
+  linkedInInsightId?: string;
+}
 
 // Get project settings
-export async function getProjectSettings(projectId: string): Promise<ProjectSettings> {
+export async function getProjectSettings(
+  projectId: string
+): Promise<ProjectSettings | null> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { settings: true },
+    select: { settings: true }
   });
 
   if (!project) {
-    throw new Error('Project not found');
+    return null;
   }
 
-  return (project.settings as any as ProjectSettings) || getDefaultSettings();
+  const settings = (project.settings as any) || {};
+
+  return {
+    seo: settings.seo || getDefaultSeoSettings(),
+    domain: settings.domain || getDefaultDomainSettings(),
+    analytics: settings.analytics || getDefaultAnalyticsSettings(),
+    scripts: settings.scripts || getDefaultScriptSettings(),
+    social: settings.social || getDefaultSocialSettings()
+  };
 }
 
 // Update project settings
 export async function updateProjectSettings(
   projectId: string,
-  settings: Partial<ProjectSettings>
+  updates: Partial<ProjectSettings>
 ): Promise<ProjectSettings> {
   const project = await prisma.project.findUnique({
-    where: { id: projectId },
+    where: { id: projectId }
   });
 
   if (!project) {
     throw new Error('Project not found');
   }
 
-  const currentSettings = (project.settings as any as ProjectSettings) || getDefaultSettings();
-  
-  const updatedSettings = {
-    ...currentSettings,
-    ...settings,
-    seo: { ...currentSettings.seo, ...settings.seo },
-    domain: { ...currentSettings.domain, ...settings.domain },
-    analytics: { ...currentSettings.analytics, ...settings.analytics },
-    customScripts: { ...currentSettings.customScripts, ...settings.customScripts },
+  const currentSettings = (project.settings as any) || {};
+
+  const newSettings = {
+    seo: {
+      ...getDefaultSeoSettings(),
+      ...currentSettings.seo,
+      ...updates.seo
+    },
+    domain: {
+      ...getDefaultDomainSettings(),
+      ...currentSettings.domain,
+      ...updates.domain
+    },
+    analytics: {
+      ...getDefaultAnalyticsSettings(),
+      ...currentSettings.analytics,
+      ...updates.analytics
+    },
+    scripts: {
+      ...getDefaultScriptSettings(),
+      ...currentSettings.scripts,
+      ...updates.scripts
+    },
+    social: {
+      ...getDefaultSocialSettings(),
+      ...currentSettings.social,
+      ...updates.social
+    }
   };
 
   const updated = await prisma.project.update({
     where: { id: projectId },
-    data: { settings: updatedSettings },
+    data: { settings: newSettings }
   });
 
-  return updated.settings as any as ProjectSettings;
-}
-
-// Get default settings
-function getDefaultSettings(): ProjectSettings {
-  return {
-    seo: {
-      title: '',
-      description: '',
-      keywords: [],
-      ogImage: '',
-      ogTitle: '',
-      ogDescription: '',
-      twitterCard: 'summary_large_image',
-      canonicalUrl: '',
-    },
-    domain: {
-      customDomain: '',
-      subdomain: '',
-      sslEnabled: true,
-    },
-    analytics: {
-      googleAnalyticsId: '',
-      plausibleDomain: '',
-      customScript: '',
-    },
-    customScripts: {
-      head: '',
-      body: '',
-    },
-  };
+  return newSettings;
 }
 
 // Update SEO settings
 export async function updateSeoSettings(
   projectId: string,
-  seo: Partial<SEOSettings>
-): Promise<SEOSettings> {
+  seo: Partial<SeoSettings>
+): Promise<SeoSettings> {
   const settings = await getProjectSettings(projectId);
-  const updated = await updateProjectSettings(projectId, { seo });
-  return updated.seo || getDefaultSettings().seo;
+
+  if (!settings) {
+    throw new Error('Project not found');
+  }
+
+  const newSeo = {
+    ...settings.seo,
+    ...seo
+  };
+
+  await updateProjectSettings(projectId, { seo: newSeo });
+
+  return newSeo;
 }
 
 // Update domain settings
@@ -95,8 +149,19 @@ export async function updateDomainSettings(
   domain: Partial<DomainSettings>
 ): Promise<DomainSettings> {
   const settings = await getProjectSettings(projectId);
-  const updated = await updateProjectSettings(projectId, { domain });
-  return updated.domain || getDefaultSettings().domain!;
+
+  if (!settings) {
+    throw new Error('Project not found');
+  }
+
+  const newDomain = {
+    ...settings.domain,
+    ...domain
+  };
+
+  await updateProjectSettings(projectId, { domain: newDomain });
+
+  return newDomain;
 }
 
 // Update analytics settings
@@ -105,71 +170,122 @@ export async function updateAnalyticsSettings(
   analytics: Partial<AnalyticsSettings>
 ): Promise<AnalyticsSettings> {
   const settings = await getProjectSettings(projectId);
-  const updated = await updateProjectSettings(projectId, { analytics });
-  return updated.analytics || getDefaultSettings().analytics!;
+
+  if (!settings) {
+    throw new Error('Project not found');
+  }
+
+  const newAnalytics = {
+    ...settings.analytics,
+    ...analytics
+  };
+
+  await updateProjectSettings(projectId, { analytics: newAnalytics });
+
+  return newAnalytics;
 }
 
-// Update custom scripts
-export async function updateCustomScripts(
+// Update script settings
+export async function updateScriptSettings(
   projectId: string,
-  customScripts: Partial<CustomScripts>
-): Promise<CustomScripts> {
+  scripts: Partial<ScriptSettings>
+): Promise<ScriptSettings> {
   const settings = await getProjectSettings(projectId);
-  const updated = await updateProjectSettings(projectId, { customScripts });
-  return updated.customScripts || getDefaultSettings().customScripts!;
+
+  if (!settings) {
+    throw new Error('Project not found');
+  }
+
+  const newScripts = {
+    ...settings.scripts,
+    ...scripts
+  };
+
+  await updateProjectSettings(projectId, { scripts: newScripts });
+
+  return newScripts;
 }
 
-// Generate SEO meta tags for a page
-export function generateSeoMetaTags(
-  pageMeta: { title?: string; description?: string; ogImage?: string } | null,
-  projectSettings: ProjectSettings
-): string {
-  const seo = projectSettings.seo;
-  const title = pageMeta?.title || seo.title || '';
-  const description = pageMeta?.description || seo.description || '';
-  const ogImage = pageMeta?.ogImage || seo.ogImage || '';
+// Add head script
+export async function addHeadScript(
+  projectId: string,
+  script: string
+): Promise<ScriptSettings> {
+  const settings = await getProjectSettings(projectId);
 
-  let metaTags = '';
-
-  if (title) {
-    metaTags += `  <title>${escapeHtml(title)}</title>\n`;
-    metaTags += `  <meta property="og:title" content="${escapeHtml(title)}">\n`;
-    metaTags += `  <meta name="twitter:title" content="${escapeHtml(title)}">\n`;
+  if (!settings) {
+    throw new Error('Project not found');
   }
 
-  if (description) {
-    metaTags += `  <meta name="description" content="${escapeHtml(description)}">\n`;
-    metaTags += `  <meta property="og:description" content="${escapeHtml(description)}">\n`;
-    metaTags += `  <meta name="twitter:description" content="${escapeHtml(description)}">\n`;
+  const headScripts = settings.scripts.headScripts || [];
+  if (!headScripts.includes(script)) {
+    headScripts.push(script);
   }
 
-  if (seo.keywords && seo.keywords.length > 0) {
-    metaTags += `  <meta name="keywords" content="${escapeHtml(seo.keywords.join(', '))}">\n`;
-  }
-
-  if (ogImage) {
-    metaTags += `  <meta property="og:image" content="${escapeHtml(ogImage)}">\n`;
-    metaTags += `  <meta name="twitter:image" content="${escapeHtml(ogImage)}">\n`;
-  }
-
-  if (seo.twitterCard) {
-    metaTags += `  <meta name="twitter:card" content="${escapeHtml(seo.twitterCard)}">\n`;
-  }
-
-  if (seo.canonicalUrl) {
-    metaTags += `  <link rel="canonical" href="${escapeHtml(seo.canonicalUrl)}">\n`;
-  }
-
-  return metaTags;
+  return updateScriptSettings(projectId, { headScripts });
 }
 
-// Generate analytics script tags
-export function generateAnalyticsScripts(analytics: AnalyticsSettings): string {
-  let scripts = '';
+// Remove head script
+export async function removeHeadScript(
+  projectId: string,
+  script: string
+): Promise<ScriptSettings> {
+  const settings = await getProjectSettings(projectId);
 
-  // Google Analytics
+  if (!settings) {
+    throw new Error('Project not found');
+  }
+
+  const headScripts = (settings.scripts.headScripts || []).filter(
+    s => s !== script
+  );
+
+  return updateScriptSettings(projectId, { headScripts });
+}
+
+// Add body script
+export async function addBodyScript(
+  projectId: string,
+  script: string
+): Promise<ScriptSettings> {
+  const settings = await getProjectSettings(projectId);
+
+  if (!settings) {
+    throw new Error('Project not found');
+  }
+
+  const bodyScripts = settings.scripts.bodyScripts || [];
+  if (!bodyScripts.includes(script)) {
+    bodyScripts.push(script);
+  }
+
+  return updateScriptSettings(projectId, { bodyScripts });
+}
+
+// Remove body script
+export async function removeBodyScript(
+  projectId: string,
+  script: string
+): Promise<ScriptSettings> {
+  const settings = await getProjectSettings(projectId);
+
+  if (!settings) {
+    throw new Error('Project not found');
+  }
+
+  const bodyScripts = (settings.scripts.bodyScripts || []).filter(
+    s => s !== script
+  );
+
+  return updateScriptSettings(projectId, { bodyScripts });
+}
+
+// Generate analytics script tag
+export function generateAnalyticsScript(
+  analytics: AnalyticsSettings
+): string | null {
   if (analytics.googleAnalyticsId) {
-    scripts += `
+    return `
 <!-- Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=${analytics.googleAnalyticsId}"></script>
 <script>
@@ -177,116 +293,188 @@ export function generateAnalyticsScripts(analytics: AnalyticsSettings): string {
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
   gtag('config', '${analytics.googleAnalyticsId}');
-</script>
-`;
+</script>`;
   }
 
-  // Plausible Analytics
   if (analytics.plausibleDomain) {
-    scripts += `
+    return `
 <!-- Plausible Analytics -->
-<script defer data-domain="${analytics.plausibleDomain}" src="https://plausible.io/js/script.js"></script>
-`;
+<script defer data-domain="${analytics.plausibleDomain}" src="https://plausible.io/js/script.js"></script>`;
   }
 
-  // Custom analytics script
+  if (analytics.umamiWebsiteId) {
+    return `
+<!-- Umami Analytics -->
+<script async defer data-website-id="${analytics.umamiWebsiteId}" src="https://analytics.umami.is/script.js"></script>`;
+  }
+
   if (analytics.customScript) {
-    scripts += `\n<!-- Custom Analytics -->\n${analytics.customScript}\n`;
+    return analytics.customScript;
   }
 
-  return scripts;
+  return null;
 }
 
-// Generate custom script tags
-export function generateCustomScripts(customScripts: CustomScripts): { head: string; body: string } {
-  return {
-    head: customScripts.head || '',
-    body: customScripts.body || '',
-  };
+// Generate social meta tags
+export function generateSocialMetaTags(
+  seo: SeoSettings,
+  social: SocialSettings
+): string {
+  const tags: string[] = [];
+
+  // Open Graph
+  if (seo.ogTitle || seo.title) {
+    tags.push(`<meta property="og:title" content="${seo.ogTitle || seo.title}">`);
+  }
+
+  if (seo.ogDescription || seo.description) {
+    tags.push(`<meta property="og:description" content="${seo.ogDescription || seo.description}">`);
+  }
+
+  if (seo.ogImage) {
+    tags.push(`<meta property="og:image" content="${seo.ogImage}">`);
+  }
+
+  // Twitter Card
+  if (social.twitterHandle) {
+    tags.push(`<meta name="twitter:creator" content="@${social.twitterHandle}">`);
+  }
+
+  if (seo.twitterCard) {
+    tags.push(`<meta name="twitter:card" content="${seo.twitterCard}">`);
+  }
+
+  // Facebook App ID
+  if (social.facebookAppId) {
+    tags.push(`<meta property="fb:app_id" content="${social.facebookAppId}">`);
+  }
+
+  // LinkedIn Insight
+  if (social.linkedInInsightId) {
+    tags.push(`
+<!-- LinkedIn Insight Tag -->
+<script type="text/javascript">
+  _linkedin_partner_id = "${social.linkedInInsightId}";
+  window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
+  window._linkedin_data_partner_ids.push(_linkedin_partner_id);
+</script>
+<script type="text/javascript">
+  (function(l) {
+    if (!l){window.lintrk = function(a,b){window.lintrk.q.push([a,b])};
+    window.lintrk.q=[]}
+    var s = document.getElementsByTagName("script")[0];
+    var b = document.createElement("script");
+    b.type = "text/javascript";b.async = true;
+    b.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
+    s.parentNode.insertBefore(b, s);
+  })(window.lintrk);
+</script>
+<noscript><img height="1" width="1" style="display:none;" alt="" src="https://px.ads.linkedin.com/collect/?pid=${social.linkedInInsightId}&fmt=gif" /></noscript>`);
+  }
+
+  return tags.join('\n');
 }
 
-// Validate domain settings
-export function validateDomainSettings(domain: DomainSettings): { valid: boolean; errors: string[] } {
+// Validate domain configuration
+export async function validateDomainConfiguration(
+  projectId: string
+): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
+  const settings = await getProjectSettings(projectId);
+
+  if (!settings) {
+    return { valid: false, errors: ['Project not found'], warnings: [] };
+  }
+
   const errors: string[] = [];
+  const warnings: string[] = [];
 
-  if (domain.customDomain) {
-    // Validate domain format
-    const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+$/;
-    if (!domainRegex.test(domain.customDomain)) {
-      errors.push('Invalid domain format');
-    }
+  // Validate SEO
+  if (!settings.seo.title) {
+    warnings.push('SEO title is not set');
+  }
 
-    // Check for common TLDs
-    const validTlds = ['.com', '.org', '.net', '.io', '.co', '.app', '.dev', '.xyz'];
-    const hasValidTld = validTlds.some(tld => domain.customDomain!.endsWith(tld));
-    if (!hasValidTld) {
-      errors.push('Domain must have a valid TLD');
+  if (!settings.seo.description) {
+    warnings.push('SEO description is not set');
+  }
+
+  if (settings.seo.title && settings.seo.title.length > 60) {
+    warnings.push('SEO title is longer than 60 characters');
+  }
+
+  if (settings.seo.description && settings.seo.description.length > 160) {
+    warnings.push('SEO description is longer than 160 characters');
+  }
+
+  // Validate domain
+  if (settings.domain.customDomain) {
+    const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/;
+    if (!domainRegex.test(settings.domain.customDomain)) {
+      errors.push('Invalid custom domain format');
     }
   }
 
-  if (domain.subdomain) {
-    const subdomainRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
-    if (!subdomainRegex.test(domain.subdomain)) {
-      errors.push('Invalid subdomain format. Use lowercase letters, numbers, and hyphens only.');
+  // Validate analytics
+  if (settings.analytics.googleAnalyticsId) {
+    const gaRegex = /^G-[A-Z0-9]{10}$/;
+    if (!gaRegex.test(settings.analytics.googleAnalyticsId)) {
+      warnings.push('Google Analytics ID format may be invalid');
     }
   }
 
   return {
     valid: errors.length === 0,
     errors,
+    warnings
   };
 }
 
-// Escape HTML for safe rendering
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-// Get deployment configuration
-export async function getDeploymentConfig(projectId: string): Promise<any> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { deploymentConfig: true },
-  });
-
-  if (!project) {
-    throw new Error('Project not found');
-  }
-
-  return project.deploymentConfig || {
-    autoDeploy: false,
-    buildCommand: 'npm run build',
-    outputDirectory: '.next',
-    nodeVersion: '18.x',
-    environmentVariables: {},
+// Default settings
+function getDefaultSeoSettings(): SeoSettings {
+  return {
+    title: '',
+    description: '',
+    keywords: [],
+    ogTitle: '',
+    ogDescription: '',
+    twitterCard: 'summary_large_image',
+    robots: 'index, follow',
+    canonical: ''
   };
 }
 
-// Update deployment configuration
-export async function updateDeploymentConfig(
-  projectId: string,
-  config: any
-): Promise<any> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-  });
+function getDefaultDomainSettings(): DomainSettings {
+  return {
+    redirectWww: true,
+    forceHttps: true
+  };
+}
 
-  if (!project) {
-    throw new Error('Project not found');
-  }
+function getDefaultAnalyticsSettings(): AnalyticsSettings {
+  return {};
+}
 
-  const currentConfig = (project.deploymentConfig as any) || {};
-  const updatedConfig = { ...currentConfig, ...config };
+function getDefaultScriptSettings(): ScriptSettings {
+  return {
+    headScripts: [],
+    bodyScripts: []
+  };
+}
 
-  const updated = await prisma.project.update({
-    where: { id: projectId },
-    data: { deploymentConfig: updatedConfig },
-  });
+function getDefaultSocialSettings(): SocialSettings {
+  return {};
+}
 
-  return updated.deploymentConfig;
+// Export settings for code generation
+export function exportSettingsForGeneration(
+  settings: ProjectSettings
+): Record<string, any> {
+  return {
+    seo: {
+      ...settings.seo,
+      metaTags: generateSocialMetaTags(settings.seo, settings.social),
+      analyticsScript: generateAnalyticsScript(settings.analytics)
+    },
+    domain: settings.domain,
+    scripts: settings.scripts
+  };
 }

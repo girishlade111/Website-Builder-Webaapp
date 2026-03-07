@@ -1,8 +1,6 @@
-// API: Project Collaborators
+// API: Project Collaborators - List and Invite
 // GET /api/projects/[id]/collaborators - List all collaborators
 // POST /api/projects/[id]/collaborators - Invite a collaborator
-// PUT /api/projects/[id]/collaborators/[userId] - Update collaborator role
-// DELETE /api/projects/[id]/collaborators/[userId] - Remove collaborator
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -24,6 +22,28 @@ const getCurrentUser = async () => {
   return user;
 };
 
+const checkProjectAccess = async (projectId: string, userId: string) => {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: { collaborations: true }
+  });
+
+  if (!project) return { allowed: false, reason: 'Project not found' };
+
+  const isOwner = project.ownerId === userId;
+  const isCollaborator = project.collaborations.some(
+    c => c.userId === userId && c.acceptedAt !== null
+  );
+
+  if (!isOwner && !isCollaborator) {
+    return { allowed: false, reason: 'Access denied' };
+  }
+
+  const role = isOwner ? 'OWNER' : project.collaborations.find(c => c.userId === userId)?.role;
+
+  return { allowed: true, role };
+};
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -32,18 +52,27 @@ export async function GET(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
+    // Check access
+    const access = await checkProjectAccess(projectId, user.id);
+    if (!access.allowed) {
+      return NextResponse.json(
+        { success: false, error: access.reason },
+        { status: 403 }
+      );
+    }
+
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       include: {
+        owner: {
+          select: { id: true, name: true, email: true, image: true }
+        },
         collaborations: {
           include: {
             user: {
               select: { id: true, name: true, email: true, image: true }
             }
           }
-        },
-        owner: {
-          select: { id: true, name: true, email: true, image: true }
         }
       }
     });
@@ -55,22 +84,18 @@ export async function GET(
       );
     }
 
-    // Format collaborators including owner
+    // Format collaborators list with owner first
     const collaborators = [
       {
-        id: project.owner.id,
-        email: project.owner.email,
-        name: project.owner.name,
-        image: project.owner.image,
+        user: project.owner,
         role: 'OWNER' as const,
-        acceptedAt: new Date()
+        invitedAt: project.createdAt,
+        acceptedAt: project.createdAt
       },
       ...project.collaborations.map(c => ({
-        id: c.user.id,
-        email: c.user.email,
-        name: c.user.name,
-        image: c.user.image,
+        user: c.user,
         role: c.role,
+        invitedAt: c.invitedAt,
         acceptedAt: c.acceptedAt
       }))
     ];
@@ -96,51 +121,30 @@ export async function POST(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
     const body = await request.json();
-    const { email, role } = body;
+    const { email, role = 'EDITOR' } = body;
 
-    if (!email || !role) {
+    // Check access
+    const access = await checkProjectAccess(projectId, user.id);
+    if (!access.allowed) {
       return NextResponse.json(
-        { success: false, error: 'Email and role are required' },
+        { success: false, error: access.reason },
+        { status: 403 }
+      );
+    }
+
+    // Only owner and admin can invite collaborators
+    if (access.role !== 'OWNER' && access.role !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Permission denied to invite collaborators' },
+        { status: 403 }
+      );
+    }
+
+    if (!email) {
+      return NextResponse.json(
+        { success: false, error: 'Email is required' },
         { status: 400 }
       );
-    }
-
-    const validRoles = ['ADMIN', 'EDITOR', 'VIEWER'];
-    if (!validRoles.includes(role)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid role' },
-        { status: 400 }
-      );
-    }
-
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found' },
-        { status: 404 }
-      );
-    }
-
-    // Only owner or admin can invite
-    if (project.ownerId !== user.id) {
-      const collaboration = await prisma.collaboration.findUnique({
-        where: {
-          userId_projectId: {
-            userId: user.id,
-            projectId
-          }
-        }
-      });
-
-      if (collaboration?.role !== 'ADMIN') {
-        return NextResponse.json(
-          { success: false, error: 'Access denied' },
-          { status: 403 }
-        );
-      }
     }
 
     // Find or create user
@@ -150,23 +154,35 @@ export async function POST(
 
     if (!targetUser) {
       targetUser = await prisma.user.create({
-        data: { email }
+        data: {
+          email,
+          name: email.split('@')[0]
+        }
       });
     }
 
-    // Create or update collaboration
-    const collaboration = await prisma.collaboration.upsert({
+    // Check if already a collaborator
+    const existing = await prisma.collaboration.findFirst({
       where: {
-        userId_projectId: {
-          userId: targetUser.id,
-          projectId
-        }
-      },
-      update: { role },
-      create: {
-        userId: targetUser.id,
         projectId,
-        role
+        userId: targetUser.id
+      }
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: 'User is already a collaborator' },
+        { status: 400 }
+      );
+    }
+
+    // Create collaboration
+    const collaboration = await prisma.collaboration.create({
+      data: {
+        projectId,
+        userId: targetUser.id,
+        role: role as any,
+        invitedAt: new Date()
       },
       include: {
         user: {
@@ -175,11 +191,13 @@ export async function POST(
       }
     });
 
+    // TODO: Send invitation email
+
     return NextResponse.json({
       success: true,
       data: collaboration,
       message: `Invitation sent to ${email}`
-    });
+    }, { status: 201 });
   } catch (error) {
     console.error('Error inviting collaborator:', error);
     return NextResponse.json(
