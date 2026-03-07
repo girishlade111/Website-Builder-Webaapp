@@ -482,17 +482,17 @@ enum DeploymentEnvironment {
 model ProjectAnalytics {
   id          String   @id @default(cuid())
   date        DateTime @db.Date
-  
+
   // Metrics
   views       Int      @default(0)
   uniqueVisitors Int   @default(0)
   bounceRate  Float    @default(0)
   avgSessionDuration Int @default(0) // seconds
-  
+
   // Relations
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
+
   @@unique([projectId, date])
   @@index([projectId])
 }
