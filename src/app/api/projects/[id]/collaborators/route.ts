@@ -1,8 +1,6 @@
-// API: Project Collaborators - List, Invite, Update, Remove
-// GET /api/projects/[id]/collaborators - List collaborators
+// API: Project Collaborators - List and Invite
+// GET /api/projects/[id]/collaborators - List all collaborators
 // POST /api/projects/[id]/collaborators - Invite collaborator
-// PUT /api/projects/[id]/collaborators/[userId] - Update role
-// DELETE /api/projects/[id]/collaborators/[userId] - Remove collaborator
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -32,10 +30,7 @@ export async function GET(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -66,7 +61,7 @@ export async function GET(
       }
     });
 
-    // Include owner
+    // Include owner as well
     const owner = await prisma.user.findUnique({
       where: { id: project.ownerId },
       select: { id: true, name: true, email: true, image: true }
@@ -76,18 +71,12 @@ export async function GET(
       {
         id: `owner-${project.id}`,
         userId: project.ownerId,
+        projectId,
         role: 'OWNER' as const,
-        user: owner,
-        acceptedAt: project.createdAt
+        acceptedAt: new Date(),
+        user: owner
       },
-      ...collaborations.map(c => ({
-        id: c.id,
-        userId: c.userId,
-        role: c.role,
-        user: c.user,
-        acceptedAt: c.acceptedAt,
-        invitedAt: c.invitedAt
-      }))
+      ...collaborations
     ];
 
     return NextResponse.json({
@@ -112,10 +101,7 @@ export async function POST(
     const { id: projectId } = await params;
     const body = await request.json();
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -146,7 +132,6 @@ export async function POST(
       );
     }
 
-    // Validate role
     const validRoles = ['ADMIN', 'EDITOR', 'VIEWER'];
     if (!validRoles.includes(role)) {
       return NextResponse.json(
@@ -162,7 +147,7 @@ export async function POST(
 
     if (!targetUser) {
       targetUser = await prisma.user.create({
-        data: { email }
+        data: { email, name: email.split('@')[0] }
       });
     }
 
@@ -191,7 +176,7 @@ export async function POST(
       data: {
         userId: targetUser.id,
         projectId,
-        role
+        role: role as 'ADMIN' | 'EDITOR' | 'VIEWER'
       },
       include: {
         user: {
@@ -200,10 +185,12 @@ export async function POST(
       }
     });
 
+    // TODO: Send invitation email
+
     return NextResponse.json({
       success: true,
       data: collaboration,
-      message: `Invitation sent to ${email}`
+      message: 'Collaborator invited successfully'
     }, { status: 201 });
   } catch (error) {
     console.error('Error inviting collaborator:', error);

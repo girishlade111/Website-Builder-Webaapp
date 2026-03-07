@@ -1,9 +1,9 @@
-// API: Collaboration Session
-// GET /api/collaboration/[projectId] - Get collaboration session info
+// API: Asset Delete
+// DELETE /api/projects/[id]/assets/[assetId] - Delete asset
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { nanoid } from 'nanoid';
+import { deleteAsset } from '@/lib/services/assetStorage';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -22,13 +22,24 @@ const getCurrentUser = async () => {
   return user;
 };
 
-export async function GET(
+export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ projectId: string }> }
+  { params }: { params: Promise<{ id: string; assetId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { projectId } = await params;
+    const { id: projectId, assetId } = await params;
+
+    const asset = await prisma.asset.findFirst({
+      where: { id: assetId, projectId }
+    });
+
+    if (!asset) {
+      return NextResponse.json(
+        { success: false, error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
 
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
@@ -44,7 +55,7 @@ export async function GET(
         where: { userId: user.id, projectId }
       });
 
-      if (!collaboration) {
+      if (!collaboration || collaboration.role === 'VIEWER') {
         return NextResponse.json(
           { success: false, error: 'Access denied' },
           { status: 403 }
@@ -52,40 +63,24 @@ export async function GET(
       }
     }
 
-    // Get or create collaboration session
-    let session = await prisma.collaborationSession.findUnique({
-      where: { projectId }
-    });
-
-    if (!session) {
-      session = await prisma.collaborationSession.create({
-        data: {
-          projectId,
-          yjsState: null,
-          cursors: {}
-        }
-      });
+    // Delete from storage provider (storageKey might be null for local storage)
+    if (asset.storageKey) {
+      await deleteAsset(asset.storageProvider, asset.storageKey);
     }
 
-    // Generate WebSocket URL
-    const wsProtocol = process.env.NODE_ENV === 'production' ? 'wss' : 'ws';
-    const wsHost = process.env.NEXT_PUBLIC_WS_HOST || 'localhost:3000';
-    const wsUrl = `${wsProtocol}://${wsHost}/ws/${projectId}`;
+    // Delete from database
+    await prisma.asset.delete({
+      where: { id: assetId }
+    });
 
     return NextResponse.json({
       success: true,
-      data: {
-        projectId,
-        sessionId: session.id,
-        wsUrl,
-        userId: user.id,
-        userName: user.name || user.email
-      }
+      message: 'Asset deleted successfully'
     });
   } catch (error) {
-    console.error('Error getting collaboration session:', error);
+    console.error('Error deleting asset:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to get collaboration session' },
+      { success: false, error: 'Failed to delete asset' },
       { status: 500 }
     );
   }

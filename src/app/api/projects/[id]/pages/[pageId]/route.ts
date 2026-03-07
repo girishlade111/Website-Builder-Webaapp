@@ -49,10 +49,7 @@ export async function GET(
     }
 
     // Check access
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (project?.ownerId !== user.id) {
       const collaboration = await prisma.collaboration.findFirst({
         where: { userId: user.id, projectId }
@@ -100,10 +97,7 @@ export async function PUT(
     }
 
     // Check access
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (project?.ownerId !== user.id) {
       const collaboration = await prisma.collaboration.findFirst({
         where: { userId: user.id, projectId }
@@ -119,7 +113,7 @@ export async function PUT(
 
     const { name, path, schema, metaTitle, metaDescription, ogImage, isPublished } = body;
 
-    // Check path uniqueness if changed
+    // Check if path already exists (if changing path)
     if (path && path !== page.path) {
       const existing = await prisma.page.findFirst({
         where: { projectId, path, id: { not: pageId } }
@@ -133,21 +127,20 @@ export async function PUT(
       }
     }
 
-    const updateData: any = {};
-    if (name !== undefined) updateData.name = name;
-    if (path !== undefined) updateData.path = path;
-    if (schema !== undefined) updateData.schema = schema;
-    if (metaTitle !== undefined) updateData.metaTitle = metaTitle;
-    if (metaDescription !== undefined) updateData.metaDescription = metaDescription;
-    if (ogImage !== undefined) updateData.ogImage = ogImage;
-    if (isPublished !== undefined) {
-      updateData.isPublished = isPublished;
-      updateData.publishedAt = isPublished ? new Date() : null;
-    }
-
     const updated = await prisma.page.update({
       where: { id: pageId },
-      data: updateData
+      data: {
+        ...(name && { name }),
+        ...(path && { path }),
+        ...(schema && { schema }),
+        ...(metaTitle && { metaTitle }),
+        ...(metaDescription !== undefined && { metaDescription }),
+        ...(ogImage !== undefined && { ogImage }),
+        ...(isPublished !== undefined && { 
+          isPublished,
+          publishedAt: isPublished ? new Date() : null
+        })
+      }
     });
 
     // Create new version if schema changed
@@ -162,7 +155,7 @@ export async function PUT(
           pageId,
           version: (latestVersion?.version || 0) + 1,
           message: body.versionMessage || 'Page update',
-          schema: schema,
+          schema: updated.schema as any,
           createdById: user.id
         }
       });
@@ -202,15 +195,18 @@ export async function DELETE(
     }
 
     // Check access
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (project?.ownerId !== user.id) {
-      return NextResponse.json(
-        { success: false, error: 'Only owner can delete pages' },
-        { status: 403 }
-      );
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
     // Cannot delete home page

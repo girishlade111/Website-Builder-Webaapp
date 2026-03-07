@@ -1,11 +1,11 @@
 // API: Project Export
-// POST /api/projects/[id]/export - Export project as static site or Next.js
+// POST /api/projects/[id]/export - Export project as static site or Next.js project
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateNextJsProject, generateStaticExport } from '@/lib/services/codeGeneration';
 import archiver from 'archiver';
-import { Writable } from 'stream';
+import { Readable } from 'stream';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -31,7 +31,7 @@ export async function POST(
   try {
     const user = await getCurrentUser();
     const { id: projectId } = await params;
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const format = searchParams.get('format') || 'nextjs';
 
     const project = await prisma.project.findUnique({
@@ -52,7 +52,7 @@ export async function POST(
         where: { userId: user.id, projectId }
       });
 
-      if (!collaboration) {
+      if (!collaboration || collaboration.role === 'VIEWER') {
         return NextResponse.json(
           { success: false, error: 'Access denied' },
           { status: 403 }
@@ -60,11 +60,9 @@ export async function POST(
       }
     }
 
-    // Validate format
-    const validFormats = ['nextjs', 'static'];
-    if (!validFormats.includes(format)) {
+    if (!['static', 'nextjs', 'vercel'].includes(format)) {
       return NextResponse.json(
-        { success: false, error: 'Invalid format. Use "nextjs" or "static"' },
+        { success: false, error: 'Invalid format. Use: static, nextjs, or vercel' },
         { status: 400 }
       );
     }
@@ -73,62 +71,57 @@ export async function POST(
     let files: Array<{ path: string; content: string }>;
 
     if (format === 'static') {
-      files = generateStaticExport(project);
+      files = generateStaticExport(project as any);
     } else {
-      files = generateNextJsProject(project, {
+      files = generateNextJsProject(project as any, {
         typescript: true,
         tailwind: true,
-        exportType: 'standalone'
+        exportType: format === 'vercel' ? 'standalone' : 'server'
       });
     }
 
     // Create ZIP archive
-    const chunks: Buffer[] = [];
-    const stream = new Writable({
-      write(chunk, encoding, callback) {
-        chunks.push(Buffer.from(chunk));
-        callback();
+    const zipBuffer = await createZipArchive(files, project.slug);
+
+    // Return ZIP file
+    return new NextResponse(zipBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${project.slug}-${format}-export.zip"`
       }
     });
-
-    const archive = archiver('zip', {
-      zlib: { level: 9 }
-    });
-
-    // Pipe archive to our stream
-    archive.pipe(stream);
-
-    // Add files to archive
-    for (const file of files) {
-      archive.append(file.content, { name: file.path });
-    }
-
-    await archive.finalize();
-
-    // Wait for stream to finish
-    await new Promise((resolve, reject) => {
-      stream.on('finish', resolve);
-      stream.on('error', reject);
-    });
-
-    const buffer = Buffer.concat(chunks);
-    const base64Zip = buffer.toString('base64');
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        format,
-        fileCount: files.length,
-        downloadUrl: `data:application/zip;base64,${base64Zip}`,
-        files: files.map(f => ({ path: f.path, size: f.content.length }))
-      },
-      message: `Project exported as ${format}`
-    });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error exporting project:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to export project' },
       { status: 500 }
     );
   }
+}
+
+async function createZipArchive(
+  files: Array<{ path: string; content: string }>,
+  projectName: string
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    archive.on('data', (chunk) => chunks.push(chunk));
+    
+    archive.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    archive.on('error', (err) => {
+      reject(err);
+    });
+
+    // Add files to archive
+    for (const file of files) {
+      archive.append(file.content, { name: file.path });
+    }
+
+    archive.finalize();
+  });
 }

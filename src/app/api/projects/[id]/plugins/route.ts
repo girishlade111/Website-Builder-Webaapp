@@ -30,10 +30,7 @@ export async function GET(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -85,10 +82,7 @@ export async function POST(
     const { id: projectId } = await params;
     const body = await request.json();
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -119,7 +113,7 @@ export async function POST(
       );
     }
 
-    // Get plugin
+    // Check if plugin exists
     const plugin = await prisma.plugin.findUnique({
       where: { id: pluginId }
     });
@@ -144,7 +138,7 @@ export async function POST(
     }
 
     // Install plugin
-    const installed = await prisma.installedPlugin.create({
+    const installedPlugin = await prisma.installedPlugin.create({
       data: {
         projectId,
         pluginId,
@@ -165,8 +159,8 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      data: installed,
-      message: `Plugin "${plugin.name}" installed successfully`
+      data: installedPlugin,
+      message: 'Plugin installed successfully'
     }, { status: 201 });
   } catch (error) {
     console.error('Error installing plugin:', error);

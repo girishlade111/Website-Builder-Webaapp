@@ -1,19 +1,15 @@
-// API: Project Settings
+// API: Project Settings - Get and Update
 // GET /api/projects/[id]/settings - Get all settings
-// PUT /api/projects/[id]/settings - Update all settings
-// PUT /api/projects/[id]/settings/seo - Update SEO settings
-// PUT /api/projects/[id]/settings/domain - Update domain settings
-// PUT /api/projects/[id]/settings/analytics - Update analytics settings
+// PUT /api/projects/[id]/settings - Update settings
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import {
-  getProjectSettings,
+import { 
+  getProjectSettings, 
   updateProjectSettings,
   updateSeoSettings,
   updateDomainSettings,
-  updateAnalyticsSettings,
-  validateDomainConfiguration
+  updateAnalyticsSettings
 } from '@/lib/services/projectSettings';
 
 const getCurrentUser = async () => {
@@ -41,10 +37,7 @@ export async function GET(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -68,13 +61,6 @@ export async function GET(
 
     const settings = await getProjectSettings(projectId);
 
-    if (!settings) {
-      return NextResponse.json(
-        { success: false, error: 'Settings not found' },
-        { status: 404 }
-      );
-    }
-
     return NextResponse.json({
       success: true,
       data: settings
@@ -97,10 +83,7 @@ export async function PUT(
     const { id: projectId } = await params;
     const body = await request.json();
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },

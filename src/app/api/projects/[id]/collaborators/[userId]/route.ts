@@ -1,5 +1,5 @@
-// API: Collaborator by User ID - Update and Remove
-// PUT /api/projects/[id]/collaborators/[userId] - Update role
+// API: Collaborator Update and Remove
+// PUT /api/projects/[id]/collaborators/[userId] - Update collaborator role
 // DELETE /api/projects/[id]/collaborators/[userId] - Remove collaborator
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -31,10 +31,7 @@ export async function PUT(
     const { id: projectId, userId } = await params;
     const body = await request.json();
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -65,7 +62,6 @@ export async function PUT(
       );
     }
 
-    // Validate role
     const validRoles = ['ADMIN', 'EDITOR', 'VIEWER'];
     if (!validRoles.includes(role)) {
       return NextResponse.json(
@@ -82,25 +78,20 @@ export async function PUT(
       );
     }
 
-    // Check if collaboration exists
-    const existing = await prisma.collaboration.findFirst({
+    const collaboration = await prisma.collaboration.findFirst({
       where: { userId, projectId }
     });
 
-    if (!existing) {
+    if (!collaboration) {
       return NextResponse.json(
         { success: false, error: 'Collaborator not found' },
         { status: 404 }
       );
     }
 
-    const updated = await prisma.collaboration.updateMany({
-      where: { userId, projectId },
-      data: { role }
-    });
-
-    const collaboration = await prisma.collaboration.findFirst({
-      where: { userId, projectId },
+    const updated = await prisma.collaboration.update({
+      where: { id: collaboration.id },
+      data: { role: role as 'ADMIN' | 'EDITOR' | 'VIEWER' },
       include: {
         user: {
           select: { id: true, name: true, email: true, image: true }
@@ -110,8 +101,8 @@ export async function PUT(
 
     return NextResponse.json({
       success: true,
-      data: collaboration,
-      message: 'Role updated successfully'
+      data: updated,
+      message: 'Collaborator role updated successfully'
     });
   } catch (error) {
     console.error('Error updating collaborator:', error);
@@ -130,10 +121,7 @@ export async function DELETE(
     const user = await getCurrentUser();
     const { id: projectId, userId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -163,20 +151,19 @@ export async function DELETE(
       );
     }
 
-    // Check if collaboration exists
-    const existing = await prisma.collaboration.findFirst({
+    const collaboration = await prisma.collaboration.findFirst({
       where: { userId, projectId }
     });
 
-    if (!existing) {
+    if (!collaboration) {
       return NextResponse.json(
         { success: false, error: 'Collaborator not found' },
         { status: 404 }
       );
     }
 
-    await prisma.collaboration.deleteMany({
-      where: { userId, projectId }
+    await prisma.collaboration.delete({
+      where: { id: collaboration.id }
     });
 
     return NextResponse.json({

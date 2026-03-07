@@ -1,10 +1,14 @@
 // API: API Integrations - List and Create
-// GET /api/projects/[id]/api-integrations - List integrations
+// GET /api/projects/[id]/api-integrations - List all integrations
 // POST /api/projects/[id]/api-integrations - Create integration
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { executeApiRequest, listApiIntegrations, createApiIntegration } from '@/lib/services/apiIntegration';
+import { 
+  listApiIntegrations, 
+  createApiIntegration,
+  executeApiRequest 
+} from '@/lib/services/apiIntegration';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -31,10 +35,7 @@ export async function GET(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -80,10 +81,7 @@ export async function POST(
     const { id: projectId } = await params;
     const body = await request.json();
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -114,11 +112,18 @@ export async function POST(
       );
     }
 
-    // Validate method
     const validMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
     if (method && !validMethods.includes(method)) {
       return NextResponse.json(
         { success: false, error: 'Invalid HTTP method' },
+        { status: 400 }
+      );
+    }
+
+    const validAuthTypes = ['NONE', 'API_KEY', 'OAUTH2', 'BEARER', 'BASIC'];
+    if (authType && !validAuthTypes.includes(authType)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid auth type' },
         { status: 400 }
       );
     }
@@ -128,7 +133,7 @@ export async function POST(
       endpoint,
       method: method || 'GET',
       headers,
-      authType,
+      authType: authType as any,
       authConfig,
       responseMapping
     });

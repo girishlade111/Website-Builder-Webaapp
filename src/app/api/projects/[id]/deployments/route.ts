@@ -31,10 +31,7 @@ export async function GET(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -80,11 +77,7 @@ export async function POST(
     const { id: projectId } = await params;
     const body = await request.json();
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: { pages: true }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -108,7 +101,6 @@ export async function POST(
 
     const { environment = 'production', customDomain } = body;
 
-    // Validate environment
     const validEnvironments = ['development', 'staging', 'production'];
     if (!validEnvironments.includes(environment)) {
       return NextResponse.json(
@@ -121,7 +113,8 @@ export async function POST(
     const deployment = await prisma.deployment.create({
       data: {
         projectId,
-        environment: environment.toUpperCase() as any,
+        environment: environment.toUpperCase() as 'DEVELOPMENT' | 'STAGING' | 'PRODUCTION',
+        status: 'PENDING',
         triggeredById: user.id
       },
       include: {
@@ -132,11 +125,15 @@ export async function POST(
     });
 
     // Trigger deployment pipeline (async)
-    triggerDeploymentPipeline(projectId, deployment.id, {
-      environment: environment as 'development' | 'staging' | 'production',
-      customDomain
-    }).catch(err => {
-      console.error('Deployment pipeline error:', err);
+    triggerDeploymentPipeline(
+      projectId,
+      deployment.id,
+      { 
+        environment: environment as 'development' | 'staging' | 'production',
+        customDomain 
+      }
+    ).catch(err => {
+      console.error('Deployment pipeline failed:', err);
     });
 
     return NextResponse.json({

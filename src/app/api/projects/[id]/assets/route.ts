@@ -4,7 +4,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { uploadAsset, createAssetRecord, listAssets, deleteAsset } from '@/lib/services/assetStorage';
+import { 
+  uploadAsset, 
+  createAssetRecord, 
+  listAssets as listAssetsService,
+  deleteAsset 
+} from '@/lib/services/assetStorage';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -31,10 +36,7 @@ export async function GET(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -56,13 +58,12 @@ export async function GET(
       }
     }
 
-    // Get query params
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get('type') || undefined;
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
 
-    const result = await listAssets(projectId, { type, page, pageSize });
+    const result = await listAssetsService(projectId, { type, page, pageSize });
 
     return NextResponse.json({
       success: true,
@@ -85,10 +86,7 @@ export async function POST(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -110,50 +108,60 @@ export async function POST(
       }
     }
 
-    // Parse multipart form data
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const name = formData.get('name') as string || file?.name || 'unnamed';
+    const name = formData.get('name') as string;
 
     if (!file) {
       return NextResponse.json(
-        { success: false, error: 'No file provided' },
+        { success: false, error: 'File is required' },
         { status: 400 }
       );
     }
 
-    // Validate file
-    const maxSize = 50 * 1024 * 1024; // 50MB
-    if (file.size > maxSize) {
+    // Validate file type
+    const mimeType = file.type;
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+      'video/mp4', 'video/webm',
+      'audio/mp3', 'audio/wav',
+      'application/pdf', 'application/json', 'text/plain',
+      'font/woff', 'font/woff2', 'font/ttf', 'font/otf'
+    ];
+
+    if (!allowedTypes.includes(mimeType)) {
       return NextResponse.json(
-        { success: false, error: 'File size exceeds 50MB limit' },
+        { success: false, error: 'File type not allowed' },
         { status: 400 }
       );
     }
 
-    // Convert File to Buffer
+    // Determine asset type
+    let assetType = 'OTHER';
+    if (mimeType.startsWith('image/')) assetType = 'IMAGE';
+    else if (mimeType.startsWith('video/')) assetType = 'VIDEO';
+    else if (mimeType.startsWith('audio/')) assetType = 'AUDIO';
+    else if (mimeType.includes('font')) assetType = 'FONT';
+    else if (['application/pdf', 'application/json', 'text/plain'].includes(mimeType)) assetType = 'DOCUMENT';
+
+    // Read file as buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Determine asset type from MIME type
-    const mimeType = file.type;
-    let type: string = 'OTHER';
-    
-    if (mimeType.startsWith('image/')) type = 'IMAGE';
-    else if (mimeType.startsWith('video/')) type = 'VIDEO';
-    else if (mimeType.startsWith('audio/')) type = 'AUDIO';
-    else if (mimeType.includes('font') || mimeType.endsWith('woff') || mimeType.endsWith('ttf')) type = 'FONT';
-    else if (mimeType.includes('pdf') || mimeType.includes('document')) type = 'DOCUMENT';
-
     // Upload file
-    const uploadResult = await uploadAsset(projectId, buffer, file.name, mimeType);
+    const uploadResult = await uploadAsset(
+      projectId,
+      buffer,
+      file.name,
+      mimeType
+    );
 
     // Create asset record
     const asset = await createAssetRecord(
       projectId,
       user.id,
-      name,
-      type,
+      name || file.name,
+      assetType,
       mimeType,
       file.size,
       uploadResult
@@ -168,89 +176,6 @@ export async function POST(
     console.error('Error uploading asset:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to upload asset' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const user = await getCurrentUser();
-    const { id: projectId } = await params;
-    const { searchParams } = new URL(request.url);
-    const assetId = searchParams.get('assetId');
-
-    if (!assetId) {
-      return NextResponse.json(
-        { success: false, error: 'Asset ID is required' },
-        { status: 400 }
-      );
-    }
-
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check access
-    if (project.ownerId !== user.id) {
-      const collaboration = await prisma.collaboration.findFirst({
-        where: { userId: user.id, projectId }
-      });
-
-      if (!collaboration || collaboration.role === 'VIEWER') {
-        return NextResponse.json(
-          { success: false, error: 'Access denied' },
-          { status: 403 }
-        );
-      }
-    }
-
-    // Get asset
-    const asset = await prisma.asset.findUnique({
-      where: { id: assetId }
-    });
-
-    if (!asset) {
-      return NextResponse.json(
-        { success: false, error: 'Asset not found' },
-        { status: 404 }
-      );
-    }
-
-    // Verify asset belongs to project
-    if (asset.projectId !== projectId) {
-      return NextResponse.json(
-        { success: false, error: 'Asset does not belong to this project' },
-        { status: 400 }
-      );
-    }
-
-    // Delete from storage provider
-    await deleteAsset(asset.storageProvider, asset.storageKey || '');
-
-    // Delete from database
-    await prisma.asset.delete({
-      where: { id: assetId }
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: 'Asset deleted successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting asset:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete asset' },
       { status: 500 }
     );
   }

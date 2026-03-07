@@ -30,10 +30,7 @@ export async function GET(
     const user = await getCurrentUser();
     const { id: projectId } = await params;
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId }
-    });
-
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
@@ -62,7 +59,8 @@ export async function GET(
           select: { id: true, name: true, email: true }
         }
       },
-      orderBy: { version: 'desc' }
+      orderBy: { version: 'desc' },
+      take: 50
     });
 
     return NextResponse.json({
@@ -113,9 +111,7 @@ export async function POST(
       }
     }
 
-    const { message } = body;
-
-    // Get latest version
+    // Get latest version number
     const latestVersion = await prisma.projectVersion.findFirst({
       where: { projectId },
       orderBy: { version: 'desc' }
@@ -126,7 +122,7 @@ export async function POST(
       data: {
         projectId,
         version: (latestVersion?.version || 0) + 1,
-        message: message || 'Manual version save',
+        message: body.message || 'Manual version save',
         snapshot: {
           project: {
             id: project.id,
@@ -138,7 +134,7 @@ export async function POST(
             id: p.id,
             name: p.name,
             path: p.path,
-            schema: p.schema
+            schema: p.schema as any
           }))
         },
         createdById: user.id
