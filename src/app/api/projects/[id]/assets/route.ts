@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { uploadAsset, createAssetRecord, listAssets } from '@/lib/services/assetStorage';
+import { uploadAsset, createAssetRecord, listAssets, deleteAsset } from '@/lib/services/assetStorage';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -168,6 +168,89 @@ export async function POST(
     console.error('Error uploading asset:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to upload asset' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUser();
+    const { id: projectId } = await params;
+    const { searchParams } = new URL(request.url);
+    const assetId = searchParams.get('assetId');
+
+    if (!assetId) {
+      return NextResponse.json(
+        { success: false, error: 'Asset ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
+
+    if (!project) {
+      return NextResponse.json(
+        { success: false, error: 'Project not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || collaboration.role === 'VIEWER') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Get asset
+    const asset = await prisma.asset.findUnique({
+      where: { id: assetId }
+    });
+
+    if (!asset) {
+      return NextResponse.json(
+        { success: false, error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
+
+    // Verify asset belongs to project
+    if (asset.projectId !== projectId) {
+      return NextResponse.json(
+        { success: false, error: 'Asset does not belong to this project' },
+        { status: 400 }
+      );
+    }
+
+    // Delete from storage provider
+    await deleteAsset(asset.storageProvider, asset.storageKey || '');
+
+    // Delete from database
+    await prisma.asset.delete({
+      where: { id: assetId }
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Asset deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting asset:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to delete asset' },
       { status: 500 }
     );
   }

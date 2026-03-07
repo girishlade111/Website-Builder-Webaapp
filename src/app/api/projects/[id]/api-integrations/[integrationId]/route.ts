@@ -195,3 +195,75 @@ export async function DELETE(
     );
   }
 }
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; integrationId: string }> }
+) {
+  try {
+    const user = await getCurrentUser();
+    const { id, integrationId } = await params;
+    const body = await request.json();
+    const { action, testParams } = body || {};
+
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
+      return NextResponse.json(
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions' },
+        { status: 403 }
+      );
+    }
+
+    const integration = await prisma.apiIntegration.findFirst({
+      where: { id: integrationId, projectId: id }
+    });
+
+    if (!integration) {
+      return NextResponse.json(
+        { success: false, error: 'Integration not found' },
+        { status: 404 }
+      );
+    }
+
+    // Handle test action
+    if (action === 'test') {
+      const result = await executeApiRequest({
+        id: integration.id,
+        name: integration.name,
+        endpoint: integration.endpoint,
+        method: integration.method as any,
+        headers: integration.headers as Record<string, string>,
+        authType: integration.authType as any,
+        authConfig: integration.authConfig as any,
+        responseMapping: integration.responseMapping as any
+      }, testParams);
+
+      return NextResponse.json({
+        success: result.success,
+        data: result.data,
+        error: result.error,
+        status: result.status,
+        message: result.success ? 'API test successful' : 'API test failed'
+      });
+    }
+
+    return NextResponse.json({
+      success: false,
+      error: 'Unknown action'
+    }, { status: 400 });
+  } catch (error) {
+    console.error('Error testing integration:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to test integration' },
+      { status: 500 }
+    );
+  }
+}
