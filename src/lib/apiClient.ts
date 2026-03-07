@@ -693,6 +693,74 @@ export const projectSettingsApi = {
   },
 };
 
+// ============================================
+// PROJECT PLUGINS API (Installation)
+// ============================================
+
+export const projectPluginsApi = {
+  // List installed plugins
+  list: async (projectId: string) => {
+    return request<any[]>(`/projects/${projectId}/plugins`);
+  },
+
+  // Install plugin
+  install: async (projectId: string, pluginId: string, settings?: any) => {
+    return request(`/projects/${projectId}/plugins`, {
+      method: 'POST',
+      body: JSON.stringify({ pluginId, settings }),
+    });
+  },
+
+  // Uninstall plugin
+  uninstall: async (projectId: string, pluginId: string) => {
+    return request(`/projects/${projectId}/plugins/${pluginId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Update plugin settings
+  updateSettings: async (projectId: string, pluginId: string, settings: any) => {
+    return request(`/projects/${projectId}/plugins/${pluginId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ settings }),
+    });
+  },
+};
+
+// ============================================
+// AUTH API
+// ============================================
+
+export const authApi = {
+  // Register
+  register: async (data: { email: string; password: string; name?: string }) => {
+    return request<{ user: User }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Login
+  login: async (data: { email: string; password: string }) => {
+    return request<{ user: User }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Logout
+  logout: async () => {
+    return request('/auth/logout', {
+      method: 'POST',
+    });
+  },
+
+  // Get current user
+  me: async () => {
+    return request<{ user: User }>('/auth/me');
+  },
+};
+
 // Export all APIs as default
 export default {
   projects: projectsApi,
@@ -704,7 +772,9 @@ export default {
   export: exportApi,
   templates: templatesApi,
   plugins: pluginsApi,
+  projectPlugins: projectPluginsApi,
   collaboration: collaborationApi,
   apiIntegrations: apiIntegrationsApi,
   projectSettings: projectSettingsApi,
+  auth: authApi,
 };
