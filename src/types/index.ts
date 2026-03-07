@@ -1,3 +1,8 @@
+// ============================================================================
+// LEGACY TYPES (for backward compatibility)
+// New architecture uses types from ./builder.ts
+// ============================================================================
+
 // Component Categories
 export type ComponentCategory =
   | 'basic'
@@ -7,7 +12,11 @@ export type ComponentCategory =
   | 'forms'
   | 'ecommerce'
   | 'navigation'
-  | 'advanced';
+  | 'advanced'
+  | 'custom';
+
+// Export new builder types
+export * from './builder';
 
 // Component Types
 export type ComponentType =
