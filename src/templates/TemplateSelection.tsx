@@ -2,9 +2,11 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useLocale } from 'next-intl';
 import { Code2, Layout, FileText, ShoppingCart, PenTool, ArrowRight, Sparkles } from 'lucide-react';
 import { templates, getTemplatesByCategory, getAllCategories } from '@/templates';
 import { Template } from '@/types';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 const categoryIcons: Record<string, React.ReactNode> = {
   General: <Layout size={20} />,
@@ -16,6 +18,7 @@ const categoryIcons: Record<string, React.ReactNode> = {
 
 export const TemplateSelection: React.FC = () => {
   const router = useRouter();
+  const locale = useLocale();
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   
@@ -31,9 +34,8 @@ export const TemplateSelection: React.FC = () => {
   
   const handleStartBuilding = () => {
     if (selectedTemplate) {
-      // Store the selected template in localStorage for the builder to use
       localStorage.setItem('selectedTemplate', JSON.stringify(selectedTemplate));
-      router.push('/builder');
+      router.push(`/${locale}/builder`);
     }
   };
   
@@ -51,6 +53,7 @@ export const TemplateSelection: React.FC = () => {
               <p className="text-xs text-gray-400">Professional Website Builder</p>
             </div>
           </div>
+          <LanguageSwitcher />
         </div>
       </header>
       

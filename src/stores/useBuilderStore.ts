@@ -9,6 +9,7 @@ import {
   StyleProperties,
   ContentProperties,
   DeviceType,
+  ComponentType,
 } from '@/types';
 import { getComponentDefinition } from '@/types/components';
 
@@ -59,34 +60,6 @@ interface BuilderStore extends BuilderState {
   canUndo: () => boolean;
   canRedo: () => boolean;
 }
-
-// Create a blank page
-const createBlankPage = (): Page => ({
-  id: uuidv4(),
-  name: 'Home',
-  slug: '/',
-  sections: [
-    {
-      id: uuidv4(),
-      name: 'Header',
-      components: [],
-    },
-    {
-      id: uuidv4(),
-      name: 'Main Content',
-      components: [],
-    },
-    {
-      id: uuidv4(),
-      name: 'Footer',
-      components: [],
-    },
-  ],
-  meta: {
-    title: 'My Website',
-    description: 'A website built with Website Builder',
-  },
-});
 
 // Create default demo page
 const createDefaultDemoPage = (): Page => {
@@ -682,7 +655,7 @@ export const createComponentFromDefinition = (
   type: string,
   category: string
 ): BuilderComponent => {
-  const definition = getComponentDefinition(type as any);
+  const definition = getComponentDefinition(type as ComponentType);
   
   if (!definition) {
     throw new Error(`Component type "${type}" not found`);

@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Code, Palette, Layout, Type, Image, ChevronDown, ChevronRight } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { X, Code, Palette, Layout, Type, ChevronDown, ChevronRight } from 'lucide-react';
 import { useBuilderStore } from '@/stores/useBuilderStore';
-import { StyleProperties, ContentProperties, BuilderComponent } from '@/types';
+import { StyleProperties, ContentProperties } from '@/types';
 
 interface PropertySectionProps {
   title: string;
@@ -148,6 +149,7 @@ const SliderField: React.FC<SliderFieldProps> = ({
 );
 
 const RightSidebar: React.FC = () => {
+  const t = useTranslations('Properties');
   const store = useBuilderStore();
   const selectedComponent = store.getSelectedComponent();
   
@@ -159,12 +161,12 @@ const RightSidebar: React.FC = () => {
     return (
       <aside className="w-80 bg-white border-l border-gray-200 flex flex-col shrink-0">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="font-bold text-lg text-gray-800">Properties</h2>
+          <h2 className="font-bold text-lg text-gray-800">{t('title')}</h2>
         </div>
         <div className="flex-1 flex items-center justify-center p-8 text-center text-gray-500">
           <div>
             <Layout size={48} className="mx-auto mb-4 text-gray-300" />
-            <p>Select a component to edit its properties</p>
+            <p>{t('noSelection')}</p>
           </div>
         </div>
       </aside>

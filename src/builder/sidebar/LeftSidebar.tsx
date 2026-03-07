@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { ChevronDown, ChevronRight, GripVertical, Search } from 'lucide-react';
 import { useBuilderStore } from '@/stores/useBuilderStore';
 import { ComponentLibraryItem, ComponentCategory } from '@/types';
@@ -57,7 +58,9 @@ interface CategorySectionProps {
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({ category, components }) => {
+  const t = useTranslations('Components');
   const [isExpanded, setIsExpanded] = useState(true);
+  const categoryName = t(`categories.${category.id}`) || category.name;
   
   return (
     <div className="border-b border-gray-100 last:border-b-0">
@@ -66,7 +69,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({ category, components 
         className="w-full flex items-center gap-2 p-3 hover:bg-gray-50 transition-colors"
       >
         {isExpanded ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
-        <span className="font-semibold text-gray-700">{category.name}</span>
+        <span className="font-semibold text-gray-700">{categoryName}</span>
         <span className="text-xs text-gray-400 ml-auto">({components.length})</span>
       </button>
       {isExpanded && (
@@ -81,6 +84,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({ category, components 
 };
 
 export const LeftSidebar: React.FC = () => {
+  const t = useTranslations();
   const store = useBuilderStore();
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -97,10 +101,10 @@ export const LeftSidebar: React.FC = () => {
   }
   
   return (
-    <aside className="w-72 bg-white border-r border-gray-200 flex flex-col shrink-0 transition-all">
+    <aside className="w-72 bg-white border-r border-gray-200 flex flex-col shrink-0 transition-all shadow-sm">
       {/* Header */}
       <div className="p-4 border-b border-gray-100">
-        <h2 className="font-bold text-lg text-gray-800 mb-3">Components</h2>
+        <h2 className="font-bold text-lg text-gray-800 mb-3">{t('Components.title')}</h2>
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -147,7 +151,7 @@ export const LeftSidebar: React.FC = () => {
       
       {/* Footer */}
       <div className="p-3 border-t border-gray-100 text-xs text-gray-500 text-center">
-        Drag components to the canvas
+        {t('Canvas.dropHere')}
       </div>
     </aside>
   );

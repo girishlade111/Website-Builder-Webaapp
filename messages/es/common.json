@@ -1,0 +1,53 @@
+{
+  "Navigation": {
+    "undo": "Deshacer",
+    "redo": "Rehacer",
+    "save": "Guardar",
+    "publish": "Publicar",
+    "preview": "Vista previa",
+    "edit": "Editar",
+    "components": "Componentes",
+    "properties": "Propiedades",
+    "code": "Codigo"
+  },
+  "Device": {
+    "desktop": "Escritorio",
+    "tablet": "Tableta",
+    "mobile": "Movil"
+  },
+  "Components": {
+    "title": "Componentes",
+    "categories": {
+      "basic": "Basico",
+      "text": "Texto",
+      "navigation": "Navegacion",
+      "media": "Medios",
+      "forms": "Formularios"
+    }
+  },
+  "Properties": {
+    "title": "Propiedades",
+    "styles": "Estilos",
+    "content": "Contenido",
+    "layout": "Diseno",
+    "effects": "Efectos",
+    "noSelection": "Selecciona un componente para editar sus propiedades"
+  },
+  "Canvas": {
+    "dropHere": "Suelta componentes aqui",
+    "emptySection": "Esta seccion esta vacia"
+  },
+  "Templates": {
+    "title": "Elige una Plantilla",
+    "startBlank": "Empezar en Blanco",
+    "selectTemplate": "Selecciona una plantilla para comenzar"
+  },
+  "Actions": {
+    "delete": "Eliminar",
+    "duplicate": "Duplicar",
+    "lock": "Bloquear",
+    "unlock": "Desbloquear",
+    "hide": "Ocultar",
+    "show": "Mostrar"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "Navigation": {
+    "undo": "Undo",
+    "redo": "Redo",
+    "save": "Save",
+    "publish": "Publish",
+    "preview": "Preview",
+    "edit": "Edit",
+    "components": "Components",
+    "properties": "Properties",
+    "code": "Code"
+  },
+  "Device": {
+    "desktop": "Desktop",
+    "tablet": "Tablet",
+    "mobile": "Mobile"
+  },
+  "Components": {
+    "title": "Components",
+    "categories": {
+      "basic": "Basic",
+      "text": "Text",
+      "navigation": "Navigation",
+      "media": "Media",
+      "forms": "Forms"
+    }
+  },
+  "Properties": {
+    "title": "Properties",
+    "styles": "Styles",
+    "content": "Content",
+    "layout": "Layout",
+    "effects": "Effects",
+    "noSelection": "Select a component to edit its properties"
+  },
+  "Canvas": {
+    "dropHere": "Drop components here",
+    "emptySection": "This section is empty"
+  },
+  "Templates": {
+    "title": "Choose a Template",
+    "startBlank": "Start Blank",
+    "selectTemplate": "Select a template to get started"
+  },
+  "Actions": {
+    "delete": "Delete",
+    "duplicate": "Duplicate",
+    "lock": "Lock",
+    "unlock": "Unlock",
+    "hide": "Hide",
+    "show": "Show"
+  }
+}

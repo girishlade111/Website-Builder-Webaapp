@@ -65,7 +65,8 @@ class PluginRegistry {
       const hook = plugin.hooks?.[hookName];
       if (hook && typeof hook === 'function') {
         try {
-          (hook as Function)(...args);
+          const hookFn = hook as (...args: unknown[]) => void;
+          hookFn(...args);
         } catch (error) {
           console.error(`Error in plugin "${plugin.name}" hook "${hookName}":`, error);
         }
