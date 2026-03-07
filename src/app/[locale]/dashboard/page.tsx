@@ -68,7 +68,7 @@ export default function DashboardPage() {
         // Navigate to builder
         window.location.href = `/${getLocale()}/builder?project=${result.data.id}`;
       } else {
-        setError(result.error || 'Failed to create project');
+        setError((result as any).error || 'Failed to create project');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to create project');

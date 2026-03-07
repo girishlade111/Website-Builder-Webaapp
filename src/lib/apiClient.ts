@@ -1,5 +1,6 @@
 // API Client for Frontend Integration
 // Provides type-safe methods for all backend endpoints
+// Falls back to mock data when backend is not available
 
 import type {
   Project,
@@ -22,6 +23,28 @@ import type {
   ExportResult,
   BuilderPage as Page
 } from '@/types/backend';
+
+// Import mock data for demo mode (no backend required)
+import { mockProjectsApi, mockTemplatesApi } from './mockData';
+
+// Check if backend is available
+let backendAvailable: boolean | null = null;
+
+async function checkBackendAvailability(): Promise<boolean> {
+  if (backendAvailable !== null) {
+    return backendAvailable;
+  }
+  
+  try {
+    // Try to reach the backend API
+    const response = await fetch('/api/health', { method: 'HEAD' });
+    backendAvailable = response.ok;
+  } catch {
+    backendAvailable = false;
+  }
+  
+  return backendAvailable;
+}
 
 // Re-export types for convenience
 export type {
@@ -120,7 +143,13 @@ async function uploadFile<T>(
 
 export const projectsApi = {
   // List all projects
-  list: (params?: { status?: string; page?: number; pageSize?: number }) => {
+  list: async (params?: { status?: string; page?: number; pageSize?: number }) => {
+    const hasBackend = await checkBackendAvailability();
+    
+    if (!hasBackend) {
+      return mockProjectsApi.list(params);
+    }
+    
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
     if (params?.page) searchParams.set('page', params.page.toString());
@@ -131,12 +160,24 @@ export const projectsApi = {
   },
 
   // Get project by ID
-  getById: (id: string) => {
+  getById: async (id: string) => {
+    const hasBackend = await checkBackendAvailability();
+    
+    if (!hasBackend) {
+      return mockProjectsApi.getById(id);
+    }
+    
     return request<Project>(`/projects/${id}`);
   },
 
   // Create project
-  create: (data: CreateProjectInput) => {
+  create: async (data: CreateProjectInput) => {
+    const hasBackend = await checkBackendAvailability();
+    
+    if (!hasBackend) {
+      return mockProjectsApi.create(data);
+    }
+    
     return request<Project>('/projects', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -144,7 +185,13 @@ export const projectsApi = {
   },
 
   // Update project
-  update: (id: string, data: UpdateProjectInput) => {
+  update: async (id: string, data: UpdateProjectInput) => {
+    const hasBackend = await checkBackendAvailability();
+    
+    if (!hasBackend) {
+      return mockProjectsApi.update(id, data);
+    }
+    
     return request<Project>(`/projects/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -152,7 +199,13 @@ export const projectsApi = {
   },
 
   // Delete project
-  delete: (id: string) => {
+  delete: async (id: string) => {
+    const hasBackend = await checkBackendAvailability();
+    
+    if (!hasBackend) {
+      return mockProjectsApi.delete(id);
+    }
+    
     return request<{ success: boolean; message: string }>(`/projects/${id}`, {
       method: 'DELETE',
     });
@@ -398,7 +451,13 @@ export const pluginsApi = {
 
 export const templatesApi = {
   // List templates
-  list: (params?: { category?: string; tag?: string; search?: string; premium?: boolean }) => {
+  list: async (params?: { category?: string; tag?: string; search?: string; premium?: boolean }) => {
+    const hasBackend = await checkBackendAvailability();
+    
+    if (!hasBackend) {
+      return mockTemplatesApi.list(params);
+    }
+    
     const searchParams = new URLSearchParams();
     if (params?.category) searchParams.set('category', params.category);
     if (params?.tag) searchParams.set('tag', params.tag);
