@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
-import { assetsApi, type Asset as ApiAsset } from '@/lib/apiClient';
+import { assetsApi } from '@/lib/apiClient';
+import type { Asset as ApiAsset } from '@/lib/apiClient';
 import { Image, Video, File, Music, Type, Upload, Trash2, Search, X, Grid, List, Loader2, AlertCircle } from 'lucide-react';
 
 interface Asset {

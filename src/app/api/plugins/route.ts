@@ -1,6 +1,6 @@
-// API: Plugins - List and Create
+// API: Plugins Marketplace - List and Create
 // GET /api/plugins - List all plugins
-// POST /api/plugins - Create plugin
+// POST /api/plugins - Create plugin (admin only)
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -27,18 +27,14 @@ export async function GET(
 ) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const type = searchParams.get('type') || undefined;
-    const premium = searchParams.get('premium');
-    const search = searchParams.get('search') || undefined;
+    const type = searchParams.get('type');
+    const search = searchParams.get('search');
+    const isPublished = searchParams.get('published');
 
     const where: any = {};
 
     if (type) {
       where.type = type;
-    }
-
-    if (premium !== null && premium !== undefined) {
-      where.isPremium = premium === 'true';
     }
 
     if (search) {
@@ -48,9 +44,17 @@ export async function GET(
       ];
     }
 
+    if (isPublished !== null && isPublished !== undefined) {
+      where.isPublished = isPublished === 'true';
+    } else {
+      // Default to published plugins
+      where.isPublished = true;
+    }
+
     const plugins = await prisma.plugin.findMany({
       where,
-      orderBy: { installs: 'desc' }
+      orderBy: { installs: 'desc' },
+      take: 50
     });
 
     return NextResponse.json({
@@ -72,17 +76,8 @@ export async function POST(
   try {
     const user = await getCurrentUser();
     const body = await request.json();
-    const {
-      name,
-      description,
-      version = '1.0.0',
-      type,
-      manifest,
-      code,
-      schema,
-      isPremium = false,
-      price
-    } = body;
+
+    const { name, description, type, version, manifest, code, schema, isPremium, price } = body;
 
     if (!name || !type) {
       return NextResponse.json(
@@ -95,13 +90,13 @@ export async function POST(
       data: {
         name,
         description,
-        version,
-        type: type as any,
+        type,
+        version: version || '1.0.0',
         manifest: manifest || {},
         code,
         schema,
-        isPremium,
-        price: isPremium ? price || 0 : 0
+        isPremium: isPremium || false,
+        price: price ? parseFloat(price) : null
       }
     });
 

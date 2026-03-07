@@ -1,235 +1,117 @@
-// API Client - Frontend integration for all backend endpoints
+// API Client for Frontend Integration
+// Provides type-safe methods for all backend endpoints
 
-const API_BASE = '/api';
+import type {
+  Project,
+  ProjectVersion,
+  Collaboration,
+  Asset,
+  Template,
+  Plugin,
+  InstalledPlugin,
+  ApiIntegration,
+  Deployment,
+  ProjectSettings,
+  ApiResponse,
+  PaginatedResponse,
+  CreateProjectInput,
+  UpdateProjectInput,
+  CreatePageInput,
+  UpdatePageInput,
+  ExportOptions,
+  ExportResult,
+  BuilderPage as Page
+} from '@/types/backend';
 
-// Types
-export interface Project {
-  id: string;
-  name: string;
-  description?: string;
-  slug: string;
-  thumbnail?: string;
-  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
-  settings?: any;
-  deploymentConfig?: any;
-  deployedUrl?: string;
-  lastDeployedAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  ownerId: string;
-  pages?: Page[];
-  collaborations?: Collaboration[];
-  assets?: Asset[];
-}
+// Re-export types for convenience
+export type {
+  Project,
+  Page,
+  ProjectVersion,
+  Collaboration,
+  Asset,
+  Template,
+  Plugin,
+  InstalledPlugin,
+  ApiIntegration,
+  Deployment,
+  ProjectSettings,
+  ApiResponse,
+  PaginatedResponse,
+  CreateProjectInput,
+  UpdateProjectInput,
+  CreatePageInput,
+  UpdatePageInput,
+  ExportOptions,
+  ExportResult
+};
 
-export interface Page {
-  id: string;
-  name: string;
-  slug: string;
-  path: string;
-  isHome: boolean;
-  schema: any;
-  metaTitle?: string;
-  metaDescription?: string;
-  metaKeywords?: string;
-  ogImage?: string;
-  isPublished: boolean;
-  publishedAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  projectId: string;
-  versions?: PageVersion[];
-}
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
-export interface PageVersion {
-  id: string;
-  version: number;
-  message?: string;
-  schema: any;
-  createdAt: Date;
-  pageId: string;
-  createdById?: string;
-}
-
-export interface ProjectVersion {
-  id: string;
-  version: number;
-  message?: string;
-  snapshot: any;
-  createdAt: Date;
-  projectId: string;
-  createdById?: string;
-}
-
-export interface Collaboration {
-  id: string;
-  role: 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
-  invitedAt: Date;
-  acceptedAt?: Date;
-  userId: string;
-  projectId: string;
-  user?: User;
-}
-
-export interface User {
-  id: string;
-  email: string;
-  name?: string;
-  image?: string;
-}
-
-export interface Asset {
-  id: string;
-  name: string;
-  type: 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' | 'FONT' | 'OTHER';
-  url: string;
-  thumbnailUrl?: string;
-  size: number;
-  mimeType: string;
-  width?: number;
-  height?: number;
-  storageProvider: string;
-  storageKey?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  projectId?: string;
-  uploadedById?: string;
-  uploadedBy?: User;
-}
-
-export interface Template {
-  id: string;
-  name: string;
-  description?: string;
-  thumbnail?: string;
-  category?: string;
-  tags: string[];
-  schema: any;
-  isPublished: boolean;
-  isPremium: boolean;
-  price?: number;
-  installs: number;
-  rating: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface Plugin {
-  id: string;
-  name: string;
-  description?: string;
-  version: string;
-  type: 'COMPONENT' | 'FEATURE' | 'INTEGRATION' | 'THEME' | 'ANALYTICS';
-  manifest?: any;
-  code?: string;
-  schema?: any;
-  isPublished: boolean;
-  isPremium: boolean;
-  price?: number;
-  installs: number;
-  rating: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface ApiIntegration {
-  id: string;
-  name: string;
-  description?: string;
-  endpoint: string;
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  headers?: Record<string, string>;
-  authType?: 'NONE' | 'API_KEY' | 'OAUTH2' | 'BEARER' | 'BASIC';
-  authConfig?: any;
-  responseMapping?: any;
-  createdAt: Date;
-  updatedAt: Date;
-  projectId: string;
-}
-
-export interface Deployment {
-  id: string;
-  status: 'PENDING' | 'BUILDING' | 'DEPLOYING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
-  environment: 'DEVELOPMENT' | 'STAGING' | 'PRODUCTION';
-  vercelId?: string;
-  vercelUrl?: string;
-  vercelError?: string;
-  buildLog?: string;
-  buildOutput?: any;
-  createdAt: Date;
-  updatedAt: Date;
-  projectId: string;
-  triggeredById?: string;
-  triggeredBy?: User;
-}
-
-export interface ProjectSettings {
-  seo: {
-    title: string;
-    description: string;
-    keywords: string[];
-    ogImage?: string;
-    ogTitle?: string;
-    ogDescription?: string;
-    twitterCard?: 'summary' | 'summary_large_image';
-    robots?: string;
-    canonical?: string;
-    favicon?: string;
-  };
-  domain: {
-    customDomain?: string;
-    redirectWww?: boolean;
-    forceHttps?: boolean;
-  };
-  analytics: {
-    googleAnalyticsId?: string;
-    plausibleDomain?: string;
-    umamiWebsiteId?: string;
-    customScript?: string;
-  };
-  scripts: {
-    headScripts?: string[];
-    bodyScripts?: string[];
-  };
-  social: {
-    twitterHandle?: string;
-    facebookAppId?: string;
-    linkedInInsightId?: string;
-  };
-}
-
-// API Response types
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
-}
-
-// Helper functions
-async function handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
-  const data = await response.json();
-  
-  if (!response.ok) {
-    throw new Error(data.error || 'Request failed');
-  }
-  
-  return data;
-}
-
+// Helper function for API requests
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const url = `${API_BASE}${endpoint}`;
+
+  const config: RequestInit = {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
     },
-  });
-  
-  return handleResponse<T>(response);
+  };
+
+  try {
+    const response = await fetch(url, config);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Request failed');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('API request failed:', error);
+    throw error;
+  }
+}
+
+// Helper for file uploads
+async function uploadFile<T>(
+  endpoint: string,
+  file: File,
+  additionalData?: Record<string, any>
+): Promise<ApiResponse<T>> {
+  const url = `${API_BASE}${endpoint}`;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  if (additionalData) {
+    for (const [key, value] of Object.entries(additionalData)) {
+      formData.append(key, value);
+    }
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Upload failed');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('File upload failed:', error);
+    throw error;
+  }
 }
 
 // ============================================
@@ -237,35 +119,24 @@ async function request<T>(
 // ============================================
 
 export const projectsApi = {
-  // List projects
-  list: async (params?: {
-    status?: string;
-    page?: number;
-    pageSize?: number;
-  }) => {
+  // List all projects
+  list: (params?: { status?: string; page?: number; pageSize?: number }) => {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
-    if (params?.page) searchParams.set('page', String(params.page));
-    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
-    
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString());
+
     const query = searchParams.toString();
-    return request<{ items: Project[]; total: number; page: number; totalPages: number }>(
-      `/projects${query ? `?${query}` : ''}`
-    );
+    return request<PaginatedResponse<Project>>(`/projects${query ? `?${query}` : ''}`);
   },
 
   // Get project by ID
-  getById: async (id: string) => {
-    return request<{ project: Project }>(`/projects/${id}`);
+  getById: (id: string) => {
+    return request<Project>(`/projects/${id}`);
   },
 
   // Create project
-  create: async (data: {
-    name: string;
-    description?: string;
-    templateId?: string;
-    slug?: string;
-  }) => {
+  create: (data: CreateProjectInput) => {
     return request<Project>('/projects', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -273,7 +144,7 @@ export const projectsApi = {
   },
 
   // Update project
-  update: async (id: string, data: Partial<Project>) => {
+  update: (id: string, data: UpdateProjectInput) => {
     return request<Project>(`/projects/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -281,8 +152,8 @@ export const projectsApi = {
   },
 
   // Delete project
-  delete: async (id: string) => {
-    return request(`/projects/${id}`, {
+  delete: (id: string) => {
+    return request<{ success: boolean; message: string }>(`/projects/${id}`, {
       method: 'DELETE',
     });
   },
@@ -293,25 +164,18 @@ export const projectsApi = {
 // ============================================
 
 export const pagesApi = {
-  // List pages
-  list: async (projectId: string) => {
+  // List pages for project
+  list: (projectId: string) => {
     return request<Page[]>(`/projects/${projectId}/pages`);
   },
 
   // Get page by ID
-  getById: async (projectId: string, pageId: string) => {
+  getById: (projectId: string, pageId: string) => {
     return request<Page>(`/projects/${projectId}/pages/${pageId}`);
   },
 
   // Create page
-  create: async (projectId: string, data: {
-    name: string;
-    slug?: string;
-    path?: string;
-    schema?: any;
-    metaTitle?: string;
-    metaDescription?: string;
-  }) => {
+  create: (projectId: string, data: CreatePageInput) => {
     return request<Page>(`/projects/${projectId}/pages`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -319,7 +183,7 @@ export const pagesApi = {
   },
 
   // Update page
-  update: async (projectId: string, pageId: string, data: Partial<Page> & { versionMessage?: string }) => {
+  update: (projectId: string, pageId: string, data: UpdatePageInput) => {
     return request<Page>(`/projects/${projectId}/pages/${pageId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -327,10 +191,11 @@ export const pagesApi = {
   },
 
   // Delete page
-  delete: async (projectId: string, pageId: string) => {
-    return request(`/projects/${projectId}/pages/${pageId}`, {
-      method: 'DELETE',
-    });
+  delete: (projectId: string, pageId: string) => {
+    return request<{ success: boolean; message: string }>(
+      `/projects/${projectId}/pages/${pageId}`,
+      { method: 'DELETE' }
+    );
   },
 };
 
@@ -340,12 +205,12 @@ export const pagesApi = {
 
 export const versionsApi = {
   // List versions
-  list: async (projectId: string) => {
+  list: (projectId: string) => {
     return request<ProjectVersion[]>(`/projects/${projectId}/versions`);
   },
 
   // Create version
-  create: async (projectId: string, message?: string) => {
+  create: (projectId: string, message?: string) => {
     return request<ProjectVersion>(`/projects/${projectId}/versions`, {
       method: 'POST',
       body: JSON.stringify({ message }),
@@ -353,10 +218,11 @@ export const versionsApi = {
   },
 
   // Rollback to version
-  rollback: async (projectId: string, versionId: string) => {
-    return request(`/projects/${projectId}/versions/${versionId}/rollback`, {
-      method: 'POST',
-    });
+  rollback: (projectId: string, versionId: string) => {
+    return request<{ success: boolean; message: string }>(
+      `/projects/${projectId}/versions/${versionId}/rollback`,
+      { method: 'POST' }
+    );
   },
 };
 
@@ -366,29 +232,29 @@ export const versionsApi = {
 
 export const assetsApi = {
   // List assets
-  list: async (projectId: string, type?: string) => {
-    const query = type ? `?type=${type}` : '';
-    return request<Asset[]>(`/projects/${projectId}/assets${query}`);
+  list: (projectId: string, params?: { type?: string; page?: number; pageSize?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.type) searchParams.set('type', params.type);
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString());
+
+    const query = searchParams.toString();
+    return request<PaginatedResponse<Asset>>(
+      `/projects/${projectId}/assets${query ? `?${query}` : ''}`
+    );
   },
 
   // Upload asset
-  upload: async (projectId: string, file: File, name?: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    if (name) formData.append('name', name);
-
-    const response = await fetch(`${API_BASE}/projects/${projectId}/assets`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    return handleResponse<Asset>(response);
+  upload: (projectId: string, file: File, name?: string) => {
+    return uploadFile<Asset>(`/projects/${projectId}/assets`, file, { name });
   },
 
-  // Delete asset (not implemented yet, would need a DELETE endpoint)
-  delete: async (projectId: string, assetId: string) => {
-    // TODO: Implement delete endpoint
-    throw new Error('Not implemented');
+  // Delete asset
+  delete: (projectId: string, assetId: string) => {
+    return request<{ success: boolean; message: string }>(
+      `/projects/${projectId}/assets/${assetId}`,
+      { method: 'DELETE' }
+    );
   },
 };
 
@@ -398,14 +264,12 @@ export const assetsApi = {
 
 export const collaboratorsApi = {
   // List collaborators
-  list: async (projectId: string) => {
-    return request<{ user: User; role: string; invitedAt: Date; acceptedAt?: Date }[]>(
-      `/projects/${projectId}/collaborators`
-    );
+  list: (projectId: string) => {
+    return request<Collaboration[]>(`/projects/${projectId}/collaborators`);
   },
 
   // Invite collaborator
-  invite: async (projectId: string, email: string, role: 'EDITOR' | 'VIEWER' | 'ADMIN' = 'EDITOR') => {
+  invite: (projectId: string, email: string, role: string) => {
     return request<Collaboration>(`/projects/${projectId}/collaborators`, {
       method: 'POST',
       body: JSON.stringify({ email, role }),
@@ -413,7 +277,7 @@ export const collaboratorsApi = {
   },
 
   // Update role
-  updateRole: async (projectId: string, userId: string, role: string) => {
+  updateRole: (projectId: string, userId: string, role: string) => {
     return request<Collaboration>(`/projects/${projectId}/collaborators/${userId}`, {
       method: 'PUT',
       body: JSON.stringify({ role }),
@@ -421,10 +285,11 @@ export const collaboratorsApi = {
   },
 
   // Remove collaborator
-  remove: async (projectId: string, userId: string) => {
-    return request(`/projects/${projectId}/collaborators/${userId}`, {
-      method: 'DELETE',
-    });
+  remove: (projectId: string, userId: string) => {
+    return request<{ success: boolean; message: string }>(
+      `/projects/${projectId}/collaborators/${userId}`,
+      { method: 'DELETE' }
+    );
   },
 };
 
@@ -434,84 +299,58 @@ export const collaboratorsApi = {
 
 export const deploymentsApi = {
   // List deployments
-  list: async (projectId: string) => {
+  list: (projectId: string) => {
     return request<Deployment[]>(`/projects/${projectId}/deployments`);
   },
 
   // Create deployment
-  create: async (projectId: string, environment: 'PRODUCTION' | 'STAGING' | 'DEVELOPMENT' = 'PRODUCTION') => {
+  create: (projectId: string, environment?: string, customDomain?: string) => {
     return request<Deployment>(`/projects/${projectId}/deployments`, {
       method: 'POST',
-      body: JSON.stringify({ environment }),
+      body: JSON.stringify({ environment, customDomain }),
     });
   },
 };
 
 // ============================================
-// EXPORT API
+// SETTINGS API
 // ============================================
 
-export const exportApi = {
-  // Export project
-  export: async (projectId: string, format: 'nextjs' | 'static' = 'nextjs') => {
-    const response = await fetch(`${API_BASE}/projects/${projectId}/export`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ format }),
+export const settingsApi = {
+  // Get settings
+  get: (projectId: string) => {
+    return request<ProjectSettings>(`/projects/${projectId}/settings`);
+  },
+
+  // Update settings
+  update: (projectId: string, settings: Partial<ProjectSettings>) => {
+    return request<ProjectSettings>(`/projects/${projectId}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify(settings),
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Export failed');
-    }
-
-    // Return blob for download
-    const blob = await response.blob();
-    return {
-      blob,
-      filename: response.headers.get('content-disposition')?.split('filename=')[1] || `${projectId}-export.zip`,
-    };
-  },
-};
-
-// ============================================
-// TEMPLATES API
-// ============================================
-
-export const templatesApi = {
-  // List templates
-  list: async (params?: {
-    category?: string;
-    tags?: string[];
-    premium?: boolean;
-    search?: string;
-  }) => {
-    const searchParams = new URLSearchParams();
-    if (params?.category) searchParams.set('category', params.category);
-    if (params?.tags) searchParams.set('tags', params.tags.join(','));
-    if (params?.premium !== undefined) searchParams.set('premium', String(params.premium));
-    if (params?.search) searchParams.set('search', params.search);
-
-    const query = searchParams.toString();
-    return request<Template[]>(`/templates${query ? `?${query}` : ''}`);
   },
 
-  // Create template
-  create: async (data: {
-    name: string;
-    description?: string;
-    thumbnail?: string;
-    category?: string;
-    tags?: string[];
-    schema: any;
-    isPremium?: boolean;
-    price?: number;
-  }) => {
-    return request<Template>('/templates', {
-      method: 'POST',
-      body: JSON.stringify(data),
+  // Update SEO
+  updateSeo: (projectId: string, seo: any) => {
+    return request<ProjectSettings>(`/projects/${projectId}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify({ seo }),
+    });
+  },
+
+  // Update domain
+  updateDomain: (projectId: string, domain: any) => {
+    return request<ProjectSettings>(`/projects/${projectId}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify({ domain }),
+    });
+  },
+
+  // Update analytics
+  updateAnalytics: (projectId: string, analytics: any) => {
+    return request<ProjectSettings>(`/projects/${projectId}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify({ analytics }),
     });
   },
 };
@@ -521,69 +360,55 @@ export const templatesApi = {
 // ============================================
 
 export const pluginsApi = {
-  // List plugins
-  list: async (params?: {
-    type?: string;
-    premium?: boolean;
-    search?: string;
-  }) => {
+  // List marketplace plugins
+  list: (params?: { type?: string; search?: string }) => {
     const searchParams = new URLSearchParams();
     if (params?.type) searchParams.set('type', params.type);
-    if (params?.premium !== undefined) searchParams.set('premium', String(params.premium));
     if (params?.search) searchParams.set('search', params.search);
 
     const query = searchParams.toString();
     return request<Plugin[]>(`/plugins${query ? `?${query}` : ''}`);
   },
 
-  // Create plugin
-  create: async (data: {
-    name: string;
-    description?: string;
-    version?: string;
-    type: string;
-    manifest?: any;
-    code?: string;
-    schema?: any;
-    isPremium?: boolean;
-    price?: number;
-  }) => {
-    return request<Plugin>('/plugins', {
+  // List installed plugins
+  listInstalled: (projectId: string) => {
+    return request<InstalledPlugin[]>(`/projects/${projectId}/plugins`);
+  },
+
+  // Install plugin
+  install: (projectId: string, pluginId: string, settings?: Record<string, any>) => {
+    return request<InstalledPlugin>(`/projects/${projectId}/plugins`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ pluginId, settings }),
     });
+  },
+
+  // Uninstall plugin
+  uninstall: (projectId: string, pluginId: string) => {
+    return request<{ success: boolean; message: string }>(
+      `/projects/${projectId}/plugins/${pluginId}`,
+      { method: 'DELETE' }
+    );
   },
 };
 
 // ============================================
-// COLLABORATION API
+// TEMPLATES API
 // ============================================
 
-export const collaborationApi = {
-  // Get collaboration state
-  getState: async (projectId: string) => {
-    return request<{
-      sessionId?: string;
-      yjsState?: number[];
-      cursors: Record<string, any>;
-      collaborators: any[];
-    }>(`/collaboration/${projectId}`);
-  },
+export const templatesApi = {
+  // List templates
+  list: (params?: { category?: string; tag?: string; search?: string; premium?: boolean }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.category) searchParams.set('category', params.category);
+    if (params?.tag) searchParams.set('tag', params.tag);
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.premium !== undefined) searchParams.set('premium', params.premium.toString());
 
-  // Update collaboration state
-  updateState: async (projectId: string, data: {
-    yjsUpdate?: number[];
-    cursor?: { x: number; y: number; selection?: any };
-    presence?: any;
-  }) => {
-    return request<{
-      sessionId: string;
-      cursors: Record<string, any>;
-      timestamp: number;
-    }>(`/collaboration/${projectId}`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    const query = searchParams.toString();
+    return request<{ items: Template[]; categories: string[] }>(
+      `/templates${query ? `?${query}` : ''}`
+    );
   },
 };
 
@@ -593,25 +418,12 @@ export const collaborationApi = {
 
 export const apiIntegrationsApi = {
   // List integrations
-  list: async (projectId: string) => {
+  list: (projectId: string) => {
     return request<ApiIntegration[]>(`/projects/${projectId}/api-integrations`);
   },
 
-  // Get integration
-  getById: async (projectId: string, integrationId: string) => {
-    return request<ApiIntegration>(`/projects/${projectId}/api-integrations/${integrationId}`);
-  },
-
   // Create integration
-  create: async (projectId: string, data: {
-    name: string;
-    endpoint: string;
-    method?: string;
-    headers?: Record<string, string>;
-    authType?: string;
-    authConfig?: any;
-    responseMapping?: any;
-  }) => {
+  create: (projectId: string, data: Partial<ApiIntegration>) => {
     return request<ApiIntegration>(`/projects/${projectId}/api-integrations`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -619,111 +431,63 @@ export const apiIntegrationsApi = {
   },
 
   // Update integration
-  update: async (projectId: string, integrationId: string, data: Partial<ApiIntegration>) => {
-    return request<ApiIntegration>(`/projects/${projectId}/api-integrations/${integrationId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+  update: (projectId: string, integrationId: string, data: Partial<ApiIntegration>) => {
+    return request<ApiIntegration>(
+      `/projects/${projectId}/api-integrations/${integrationId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
   },
 
   // Delete integration
-  delete: async (projectId: string, integrationId: string) => {
-    return request(`/projects/${projectId}/api-integrations/${integrationId}`, {
-      method: 'DELETE',
-    });
+  delete: (projectId: string, integrationId: string) => {
+    return request<{ success: boolean; message: string }>(
+      `/projects/${projectId}/api-integrations/${integrationId}`,
+      { method: 'DELETE' }
+    );
   },
 
   // Test integration
-  test: async (projectId: string, integrationId: string, testParams?: any, testBody?: any) => {
-    return request<{
-      request: any;
-      response: {
-        success: boolean;
-        status?: number;
-        data?: any;
-        error?: string;
-      };
-    }>(`/projects/${projectId}/api-integrations/${integrationId}/test`, {
-      method: 'POST',
-      body: JSON.stringify({ testParams, testBody }),
-    });
+  test: (projectId: string, integrationId: string, options?: any) => {
+    return request<any>(
+      `/projects/${projectId}/api-integrations/${integrationId}/test`,
+      {
+        method: 'POST',
+        body: JSON.stringify(options),
+      }
+    );
   },
 };
 
 // ============================================
-// PROJECT SETTINGS API
+// EXPORT API
 // ============================================
 
-export const projectSettingsApi = {
-  // Get settings
-  get: async (projectId: string) => {
-    return request<ProjectSettings>(`/projects/${projectId}/settings`);
-  },
+export const exportApi = {
+  // Export project
+  export: (projectId: string, options: ExportOptions) => {
+    const searchParams = new URLSearchParams();
+    searchParams.set('format', options.format);
 
-  // Update settings
-  update: async (projectId: string, settings: Partial<ProjectSettings>) => {
-    return request<ProjectSettings>(`/projects/${projectId}/settings`, {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    });
-  },
-
-  // Update SEO settings
-  updateSeo: async (projectId: string, seo: Partial<ProjectSettings['seo']>) => {
-    return request<ProjectSettings['seo']>(`/projects/${projectId}/settings/seo`, {
-      method: 'PUT',
-      body: JSON.stringify({ seo }),
-    });
-  },
-
-  // Update domain settings
-  updateDomain: async (projectId: string, domain: Partial<ProjectSettings['domain']>) => {
-    return request<ProjectSettings['domain']>(`/projects/${projectId}/settings/domain`, {
-      method: 'PUT',
-      body: JSON.stringify({ domain }),
-    });
-  },
-
-  // Update analytics settings
-  updateAnalytics: async (projectId: string, analytics: Partial<ProjectSettings['analytics']>) => {
-    return request<ProjectSettings['analytics']>(`/projects/${projectId}/settings/analytics`, {
-      method: 'PUT',
-      body: JSON.stringify({ analytics }),
-    });
+    return request<ExportResult>(
+      `/projects/${projectId}/export?${searchParams.toString()}`,
+      { method: 'POST' }
+    );
   },
 };
 
 // ============================================
-// PROJECT PLUGINS API (Installation)
+// COLLABORATION API
 // ============================================
 
-export const projectPluginsApi = {
-  // List installed plugins
-  list: async (projectId: string) => {
-    return request<any[]>(`/projects/${projectId}/plugins`);
-  },
-
-  // Install plugin
-  install: async (projectId: string, pluginId: string, settings?: any) => {
-    return request(`/projects/${projectId}/plugins`, {
-      method: 'POST',
-      body: JSON.stringify({ pluginId, settings }),
-    });
-  },
-
-  // Uninstall plugin
-  uninstall: async (projectId: string, pluginId: string) => {
-    return request(`/projects/${projectId}/plugins/${pluginId}`, {
-      method: 'DELETE',
-    });
-  },
-
-  // Update plugin settings
-  updateSettings: async (projectId: string, pluginId: string, settings: any) => {
-    return request(`/projects/${projectId}/plugins/${pluginId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ settings }),
-    });
+export const collaborationApi = {
+  // Get collaboration session
+  getSession: (projectId: string) => {
+    return request<{ projectId: string; sessionId: string; wsUrl: string }>(
+      `/collaboration/${projectId}`
+    );
   },
 };
 
@@ -732,32 +496,30 @@ export const projectPluginsApi = {
 // ============================================
 
 export const authApi = {
-  // Register
-  register: async (data: { email: string; password: string; name?: string }) => {
-    return request<{ user: User }>('/auth/register', {
+  // Login
+  login: (email: string, password?: string) => {
+    return request<any>('/auth?action=login', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ email, password }),
     });
   },
 
-  // Login
-  login: async (data: { email: string; password: string }) => {
-    return request<{ user: User }>('/auth/login', {
+  // Register
+  register: (email: string, password: string, name?: string) => {
+    return request<any>('/auth?action=register', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ email, password, name }),
     });
   },
 
   // Logout
-  logout: async () => {
-    return request('/auth/logout', {
-      method: 'POST',
-    });
+  logout: () => {
+    return request<any>('/auth?action=logout', { method: 'POST' });
   },
 
   // Get current user
-  me: async () => {
-    return request<{ user: User }>('/auth/me');
+  me: () => {
+    return request<any>('/auth/me');
   },
 };
 
@@ -769,12 +531,11 @@ export default {
   assets: assetsApi,
   collaborators: collaboratorsApi,
   deployments: deploymentsApi,
-  export: exportApi,
-  templates: templatesApi,
+  settings: settingsApi,
   plugins: pluginsApi,
-  projectPlugins: projectPluginsApi,
-  collaboration: collaborationApi,
+  templates: templatesApi,
   apiIntegrations: apiIntegrationsApi,
-  projectSettings: projectSettingsApi,
+  export: exportApi,
+  collaboration: collaborationApi,
   auth: authApi,
 };

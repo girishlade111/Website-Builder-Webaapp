@@ -1,9 +1,10 @@
 // API: API Integrations - List and Create
-// GET /api/projects/:id/api-integrations - List all integrations
-// POST /api/projects/:id/api-integrations - Create integration
+// GET /api/projects/[id]/api-integrations - List integrations
+// POST /api/projects/[id]/api-integrations - Create integration
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { executeApiRequest, listApiIntegrations, createApiIntegration } from '@/lib/services/apiIntegration';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -22,54 +23,49 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    const integrations = await prisma.apiIntegration.findMany({
-      where: { projectId: id },
-      orderBy: { createdAt: 'desc' }
-    });
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
+    const integrations = await listApiIntegrations(projectId);
 
     return NextResponse.json({
       success: true,
       data: integrations
     });
   } catch (error) {
-    console.error('Error fetching integrations:', error);
+    console.error('Error fetching API integrations:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch integrations' },
+      { success: false, error: 'Failed to fetch API integrations' },
       { status: 500 }
     );
   }
@@ -81,33 +77,35 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
     const body = await request.json();
-    const {
-      name,
-      endpoint,
-      method = 'GET',
-      headers = {},
-      authType = 'NONE',
-      authConfig = {},
-      responseMapping = {}
-    } = body;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || collaboration.role === 'VIEWER') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
+
+    const { name, endpoint, method, headers, authType, authConfig, responseMapping } = body;
 
     if (!name || !endpoint) {
       return NextResponse.json(
@@ -116,17 +114,23 @@ export async function POST(
       );
     }
 
-    const integration = await prisma.apiIntegration.create({
-      data: {
-        projectId: id,
-        name,
-        endpoint,
-        method: method as any,
-        headers,
-        authType: authType as any,
-        authConfig,
-        responseMapping
-      }
+    // Validate method
+    const validMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    if (method && !validMethods.includes(method)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid HTTP method' },
+        { status: 400 }
+      );
+    }
+
+    const integration = await createApiIntegration(projectId, {
+      name,
+      endpoint,
+      method: method || 'GET',
+      headers,
+      authType,
+      authConfig,
+      responseMapping
     });
 
     return NextResponse.json({
@@ -135,9 +139,9 @@ export async function POST(
       message: 'API integration created successfully'
     }, { status: 201 });
   } catch (error) {
-    console.error('Error creating integration:', error);
+    console.error('Error creating API integration:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to create integration' },
+      { success: false, error: 'Failed to create API integration' },
       { status: 500 }
     );
   }

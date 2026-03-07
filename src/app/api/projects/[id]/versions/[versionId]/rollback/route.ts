@@ -1,5 +1,5 @@
-// API: Rollback to Version
-// POST /api/projects/:id/versions/:versionId/rollback - Rollback project to specific version
+// API: Version Rollback
+// POST /api/projects/[id]/versions/[versionId]/rollback - Rollback to version
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -21,54 +21,42 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; versionId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id, versionId } = await params;
+    const { id: projectId, versionId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    // Check access - only owner or admin can rollback
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || (collaboration.role !== 'OWNER' && collaboration.role !== 'ADMIN')) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
-    // Get the version to rollback to
+    // Get version to rollback to
     const version = await prisma.projectVersion.findFirst({
-      where: {
-        id: versionId,
-        projectId: id
-      }
+      where: { id: versionId, projectId }
     });
 
     if (!version) {
@@ -80,54 +68,80 @@ export async function POST(
 
     const snapshot = version.snapshot as any;
 
-    // Update project with snapshot data
-    await prisma.project.update({
-      where: { id },
-      data: {
-        name: snapshot.project?.name || project.name,
-        description: snapshot.project?.description,
-        settings: snapshot.project?.settings,
-        deploymentConfig: snapshot.project?.deploymentConfig
-      }
-    });
-
-    // Delete current pages
-    await prisma.page.deleteMany({
-      where: { projectId: id }
-    });
-
-    // Restore pages from snapshot
-    if (snapshot.pages && Array.isArray(snapshot.pages)) {
-      for (const pageData of snapshot.pages) {
-        await prisma.page.create({
-          data: {
-            projectId: id,
-            name: pageData.name,
-            slug: pageData.slug || pageData.name.toLowerCase().replace(/\s+/g, '-'),
-            path: pageData.path,
-            isHome: pageData.isHome || false,
-            schema: pageData.schema,
-            metaTitle: pageData.metaTitle,
-            metaDescription: pageData.metaDescription
-          }
+    // Start transaction to restore project state
+    await prisma.$transaction(async (tx) => {
+      // Update project settings
+      if (snapshot.project?.settings) {
+        await tx.project.update({
+          where: { id: projectId },
+          data: { settings: snapshot.project.settings }
         });
       }
-    }
 
-    // Create new version for the rollback
-    const latestVersion = await prisma.projectVersion.findFirst({
-      where: { projectId: id },
-      orderBy: { version: 'desc' }
-    });
+      // Get current pages
+      const currentPages = await tx.page.findMany({
+        where: { projectId }
+      });
 
-    await prisma.projectVersion.create({
-      data: {
-        projectId: id,
-        version: (latestVersion?.version || 0) + 1,
-        message: `Rollback to version ${version.version}`,
-        snapshot: version.snapshot as any,
-        createdById: user.id
+      // Delete pages not in snapshot
+      const snapshotPageIds = snapshot.pages?.map((p: any) => p.id) || [];
+      const pagesToDelete = currentPages.filter(p => !snapshotPageIds.includes(p.id));
+
+      for (const page of pagesToDelete) {
+        await tx.page.delete({ where: { id: page.id } });
       }
+
+      // Restore or update pages from snapshot
+      if (snapshot.pages) {
+        for (const pageSnapshot of snapshot.pages) {
+          const existingPage = currentPages.find(p => p.id === pageSnapshot.id);
+
+          if (existingPage) {
+            // Update existing page
+            await tx.page.update({
+              where: { id: pageSnapshot.id },
+              data: {
+                name: pageSnapshot.name,
+                path: pageSnapshot.path,
+                schema: pageSnapshot.schema,
+                metaTitle: pageSnapshot.metaTitle,
+                metaDescription: pageSnapshot.metaDescription
+              }
+            });
+          } else {
+            // Create new page from snapshot
+            await tx.page.create({
+              data: {
+                id: pageSnapshot.id,
+                projectId,
+                name: pageSnapshot.name,
+                slug: pageSnapshot.path.replace(/^\//, '').replace(/\//g, '-') || pageSnapshot.id.substring(0, 8),
+                path: pageSnapshot.path,
+                isHome: pageSnapshot.path === '/',
+                schema: pageSnapshot.schema,
+                metaTitle: pageSnapshot.metaTitle,
+                metaDescription: pageSnapshot.metaDescription
+              }
+            });
+          }
+        }
+      }
+
+      // Create new version for rollback
+      const latestVersion = await tx.projectVersion.findFirst({
+        where: { projectId },
+        orderBy: { version: 'desc' }
+      });
+
+      await tx.projectVersion.create({
+        data: {
+          projectId,
+          version: (latestVersion?.version || 0) + 1,
+          message: `Rolled back to version ${version.version}`,
+          snapshot: version.snapshot as any,
+          createdById: user.id
+        }
+      });
     });
 
     return NextResponse.json({
@@ -135,9 +149,9 @@ export async function POST(
       message: `Successfully rolled back to version ${version.version}`
     });
   } catch (error) {
-    console.error('Error rolling back:', error);
+    console.error('Error rolling back version:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to rollback to version' },
+      { success: false, error: 'Failed to rollback version' },
       { status: 500 }
     );
   }

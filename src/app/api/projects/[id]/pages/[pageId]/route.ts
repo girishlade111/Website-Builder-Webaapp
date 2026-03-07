@@ -1,7 +1,7 @@
 // API: Page by ID - Get, Update, Delete
-// GET /api/projects/:id/pages/:pageId - Get page by ID
-// PUT /api/projects/:id/pages/:pageId - Update page
-// DELETE /api/projects/:id/pages/:pageId - Delete page
+// GET /api/projects/[id]/pages/[pageId] - Get page by ID
+// PUT /api/projects/[id]/pages/[pageId] - Update page
+// DELETE /api/projects/[id]/pages/[pageId] - Delete page
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -23,59 +23,20 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; pageId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id, pageId } = await params;
-
-    const project = await checkProjectAccess(id, user.id);
-
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
-        { status: 404 }
-      );
-    }
+    const { id: projectId, pageId } = await params;
 
     const page = await prisma.page.findFirst({
-      where: {
-        id: pageId,
-        projectId: id
-      },
+      where: { id: pageId, projectId },
       include: {
         versions: {
-          select: {
-            id: true,
-            version: true,
-            message: true,
-            schema: true,
-            createdAt: true,
-            createdBy: {
-              select: { id: true, name: true, email: true }
-            }
-          },
-          orderBy: { version: 'desc' }
+          orderBy: { version: 'desc' },
+          take: 10
         }
       }
     });
@@ -87,9 +48,27 @@ export async function GET(
       );
     }
 
+    // Check access
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
+
+    if (project?.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data: { page }
+      data: page
     });
   } catch (error) {
     console.error('Error fetching page:', error);
@@ -106,46 +85,46 @@ export async function PUT(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id, pageId } = await params;
+    const { id: projectId, pageId } = await params;
     const body = await request.json();
-    const {
-      name,
-      slug,
-      path,
-      schema,
-      metaTitle,
-      metaDescription,
-      metaKeywords,
-      ogImage,
-      isPublished,
-      versionMessage
-    } = body;
 
-    const project = await checkProjectAccess(id, user.id);
+    const page = await prisma.page.findFirst({
+      where: { id: pageId, projectId }
+    });
 
-    if (!project) {
+    if (!page) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Page not found' },
         { status: 404 }
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    // Check access
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
+
+    if (project?.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || collaboration.role === 'VIEWER') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
+    const { name, path, schema, metaTitle, metaDescription, ogImage, isPublished } = body;
+
     // Check path uniqueness if changed
-    if (path) {
+    if (path && path !== page.path) {
       const existing = await prisma.page.findFirst({
-        where: {
-          projectId: id,
-          path,
-          NOT: { id: pageId }
-        }
+        where: { projectId, path, id: { not: pageId } }
       });
+
       if (existing) {
         return NextResponse.json(
           { success: false, error: 'Page path already exists' },
@@ -154,19 +133,12 @@ export async function PUT(
       }
     }
 
-    // Get current page for version tracking
-    const currentPage = await prisma.page.findFirst({
-      where: { id: pageId, projectId: id }
-    });
-
     const updateData: any = {};
-    if (name) updateData.name = name;
-    if (slug) updateData.slug = slug;
-    if (path) updateData.path = path;
+    if (name !== undefined) updateData.name = name;
+    if (path !== undefined) updateData.path = path;
     if (schema !== undefined) updateData.schema = schema;
     if (metaTitle !== undefined) updateData.metaTitle = metaTitle;
     if (metaDescription !== undefined) updateData.metaDescription = metaDescription;
-    if (metaKeywords !== undefined) updateData.metaKeywords = metaKeywords;
     if (ogImage !== undefined) updateData.ogImage = ogImage;
     if (isPublished !== undefined) {
       updateData.isPublished = isPublished;
@@ -179,7 +151,7 @@ export async function PUT(
     });
 
     // Create new version if schema changed
-    if (schema && currentPage && JSON.stringify(currentPage.schema) !== JSON.stringify(schema)) {
+    if (schema) {
       const latestVersion = await prisma.pageVersion.findFirst({
         where: { pageId },
         orderBy: { version: 'desc' }
@@ -189,40 +161,8 @@ export async function PUT(
         data: {
           pageId,
           version: (latestVersion?.version || 0) + 1,
-          message: versionMessage || 'Page update',
-          schema: schema as any,
-          createdById: user.id
-        }
-      });
-
-      // Also create project version
-      const projectLatestVersion = await prisma.projectVersion.findFirst({
-        where: { projectId: id },
-        orderBy: { version: 'desc' }
-      });
-
-      const allPages = await prisma.page.findMany({
-        where: { projectId: id }
-      });
-
-      await prisma.projectVersion.create({
-        data: {
-          projectId: id,
-          version: (projectLatestVersion?.version || 0) + 1,
-          message: versionMessage || `Updated page: ${name || pageId}`,
-          snapshot: {
-            project: {
-              id,
-              name: project.name,
-              settings: project.settings
-            },
-            pages: allPages.map(p => ({
-              id: p.id,
-              name: p.name,
-              path: p.path,
-              schema: p.schema as any
-            }))
-          },
+          message: body.versionMessage || 'Page update',
+          schema: schema,
           createdById: user.id
         }
       });
@@ -248,32 +188,28 @@ export async function DELETE(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id, pageId } = await params;
-
-    const project = await checkProjectAccess(id, user.id);
-
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
-        { status: 404 }
-      );
-    }
-
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
-    }
+    const { id: projectId, pageId } = await params;
 
     const page = await prisma.page.findFirst({
-      where: { id: pageId, projectId: id }
+      where: { id: pageId, projectId }
     });
 
     if (!page) {
       return NextResponse.json(
         { success: false, error: 'Page not found' },
         { status: 404 }
+      );
+    }
+
+    // Check access
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
+
+    if (project?.ownerId !== user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Only owner can delete pages' },
+        { status: 403 }
       );
     }
 

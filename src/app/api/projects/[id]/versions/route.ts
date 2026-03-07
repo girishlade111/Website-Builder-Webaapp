@@ -1,6 +1,6 @@
 // API: Project Versions - List and Create
-// GET /api/projects/:id/versions - List all versions
-// POST /api/projects/:id/versions - Create new version
+// GET /api/projects/[id]/versions - List all versions
+// POST /api/projects/[id]/versions - Create new version
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -22,43 +22,41 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
     const versions = await prisma.projectVersion.findMany({
-      where: { projectId: id },
+      where: { projectId },
       include: {
         createdBy: {
           select: { id: true, name: true, email: true }
@@ -69,7 +67,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: { versions }
+      data: versions
     });
   } catch (error) {
     console.error('Error fetching versions:', error);
@@ -86,50 +84,61 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
     const body = await request.json();
-    const { message } = body;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: { pages: true }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    // Get current project state
-    const pages = await prisma.page.findMany({
-      where: { projectId: id }
-    });
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
 
-    // Get latest version number
+      if (!collaboration || collaboration.role === 'VIEWER') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
+    const { message } = body;
+
+    // Get latest version
     const latestVersion = await prisma.projectVersion.findFirst({
-      where: { projectId: id },
+      where: { projectId },
       orderBy: { version: 'desc' }
     });
 
+    // Create new version
     const version = await prisma.projectVersion.create({
       data: {
-        projectId: id,
+        projectId,
         version: (latestVersion?.version || 0) + 1,
         message: message || 'Manual version save',
         snapshot: {
           project: {
-            id,
+            id: project.id,
             name: project.name,
             description: project.description,
-            settings: project.settings,
-            deploymentConfig: project.deploymentConfig
+            settings: project.settings
           },
-          pages: pages.map(p => ({
+          pages: project.pages.map(p => ({
             id: p.id,
             name: p.name,
             path: p.path,
-            schema: p.schema as any,
-            metaTitle: p.metaTitle,
-            metaDescription: p.metaDescription
+            schema: p.schema
           }))
         },
         createdById: user.id

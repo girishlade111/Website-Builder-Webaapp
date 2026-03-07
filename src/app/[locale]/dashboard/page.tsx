@@ -6,7 +6,7 @@ import { projectsApi, templatesApi } from '@/lib/apiClient';
 import type { Project, Template } from '@/lib/apiClient';
 import { Plus, ExternalLink, Clock, Trash2, Edit, Settings, Globe, Users, Layers, Code, Image, Rocket, ChevronRight, Search, Filter } from 'lucide-react';
 
-interface ProjectWithDetails extends Project {
+interface ProjectWithDetails extends Omit<Project, 'pages'> {
   pages?: any[];
   collaborations?: any[];
 }
@@ -42,7 +42,7 @@ export default function DashboardPage() {
       }
 
       if (templatesRes.success && templatesRes.data) {
-        setTemplates(templatesRes.data);
+        setTemplates(templatesRes.data.items);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load data');

@@ -1,11 +1,11 @@
-// API: Project Export - Export as Next.js or Static site
-// POST /api/projects/:id/export - Export project
+// API: Project Export
+// POST /api/projects/[id]/export - Export project as static site or Next.js
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateNextJsProject, generateStaticExport } from '@/lib/services/codeGeneration';
 import archiver from 'archiver';
-import { Readable } from 'stream';
+import { Writable } from 'stream';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -24,82 +24,79 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
-    const body = await request.json();
-    const { format = 'nextjs' } = body;
+    const { id: projectId } = await params;
+    const { searchParams } = new URL(request.url);
+    const format = searchParams.get('format') || 'nextjs';
 
-    const project = await checkProjectAccess(id, user.id);
-
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
-        { status: 404 }
-      );
-    }
-
-    // Get project with pages
-    const fullProject = await prisma.project.findUnique({
-      where: { id },
-      include: {
-        pages: {
-          orderBy: { path: 'asc' }
-        }
-      }
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: { pages: true }
     });
 
-    if (!fullProject) {
+    if (!project) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    // Generate files based on format
-    let files;
-    let filename;
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
 
-    if (format === 'static') {
-      files = generateStaticExport(fullProject);
-      filename = `${fullProject.slug}-static-export.zip`;
-    } else {
-      files = generateNextJsProject(fullProject);
-      filename = `${fullProject.slug}-nextjs-export.zip`;
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
-    // Create zip archive
+    // Validate format
+    const validFormats = ['nextjs', 'static'];
+    if (!validFormats.includes(format)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid format. Use "nextjs" or "static"' },
+        { status: 400 }
+      );
+    }
+
+    // Generate files based on format
+    let files: Array<{ path: string; content: string }>;
+
+    if (format === 'static') {
+      files = generateStaticExport(project);
+    } else {
+      files = generateNextJsProject(project, {
+        typescript: true,
+        tailwind: true,
+        exportType: 'standalone'
+      });
+    }
+
+    // Create ZIP archive
+    const chunks: Buffer[] = [];
+    const stream = new Writable({
+      write(chunk, encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      }
+    });
+
     const archive = archiver('zip', {
       zlib: { level: 9 }
     });
 
-    const chunks: Buffer[] = [];
-
-    archive.on('data', (chunk) => {
-      chunks.push(chunk);
-    });
+    // Pipe archive to our stream
+    archive.pipe(stream);
 
     // Add files to archive
     for (const file of files) {
@@ -108,21 +105,24 @@ export async function POST(
 
     await archive.finalize();
 
-    // Wait for archive to complete
-    const buffer = await new Promise<Buffer>((resolve, reject) => {
-      archive.on('end', () => {
-        resolve(Buffer.concat(chunks));
-      });
-      archive.on('error', reject);
+    // Wait for stream to finish
+    await new Promise((resolve, reject) => {
+      stream.on('finish', resolve);
+      stream.on('error', reject);
     });
 
-    // Return as downloadable file
-    return new NextResponse(buffer as any, {
-      headers: {
-        'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': buffer.length.toString()
-      }
+    const buffer = Buffer.concat(chunks);
+    const base64Zip = buffer.toString('base64');
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        format,
+        fileCount: files.length,
+        downloadUrl: `data:application/zip;base64,${base64Zip}`,
+        files: files.map(f => ({ path: f.path, size: f.content.length }))
+      },
+      message: `Project exported as ${format}`
     });
   } catch (error) {
     console.error('Error exporting project:', error);

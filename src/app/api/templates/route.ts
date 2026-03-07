@@ -1,6 +1,6 @@
 // API: Templates - List and Create
 // GET /api/templates - List all templates
-// POST /api/templates - Create template
+// POST /api/templates - Create template (admin only)
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -27,10 +27,10 @@ export async function GET(
 ) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const category = searchParams.get('category') || undefined;
-    const tags = searchParams.get('tags')?.split(',') || undefined;
-    const premium = searchParams.get('premium');
-    const search = searchParams.get('search') || undefined;
+    const category = searchParams.get('category');
+    const tag = searchParams.get('tag');
+    const search = searchParams.get('search');
+    const isPremium = searchParams.get('premium');
 
     const where: any = { isPublished: true };
 
@@ -38,14 +38,8 @@ export async function GET(
       where.category = category;
     }
 
-    if (tags && tags.length > 0) {
-      where.tags = {
-        hasSome: tags
-      };
-    }
-
-    if (premium !== null && premium !== undefined) {
-      where.isPremium = premium === 'true';
+    if (tag) {
+      where.tags = { has: tag };
     }
 
     if (search) {
@@ -55,14 +49,29 @@ export async function GET(
       ];
     }
 
+    if (isPremium !== null && isPremium !== undefined) {
+      where.isPremium = isPremium === 'true';
+    }
+
     const templates = await prisma.template.findMany({
       where,
-      orderBy: { installs: 'desc' }
+      orderBy: { installs: 'desc' },
+      take: 50
+    });
+
+    // Get unique categories
+    const categories = await prisma.template.findMany({
+      distinct: ['category'],
+      select: { category: true },
+      where: { isPublished: true, category: { not: null } }
     });
 
     return NextResponse.json({
       success: true,
-      data: templates
+      data: {
+        items: templates,
+        categories: categories.map(c => c.category).filter(Boolean)
+      }
     });
   } catch (error) {
     console.error('Error fetching templates:', error);
@@ -79,20 +88,12 @@ export async function POST(
   try {
     const user = await getCurrentUser();
     const body = await request.json();
-    const {
-      name,
-      description,
-      thumbnail,
-      category,
-      tags = [],
-      schema,
-      isPremium = false,
-      price
-    } = body;
 
-    if (!name || !schema) {
+    const { name, description, category, tags, schema, thumbnail, isPremium, price } = body;
+
+    if (!name) {
       return NextResponse.json(
-        { success: false, error: 'Name and schema are required' },
+        { success: false, error: 'Template name is required' },
         { status: 400 }
       );
     }
@@ -101,12 +102,12 @@ export async function POST(
       data: {
         name,
         description,
-        thumbnail,
         category,
-        tags,
-        schema,
-        isPremium,
-        price: isPremium ? price || 0 : 0
+        tags: tags || [],
+        schema: schema || { pages: [] },
+        thumbnail,
+        isPremium: isPremium || false,
+        price: price ? parseFloat(price) : null
       }
     });
 

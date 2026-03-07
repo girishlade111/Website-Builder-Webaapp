@@ -69,9 +69,12 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const result = await collaborationApi.getState(projectId);
+      // Note: We need to fetch collaborators from a different endpoint
+      // This is a placeholder - in production, use the collaborators API
+      const response = await fetch(`/api/projects/${projectId}/collaborators`);
+      const result = await response.json();
       if (result.success && result.data) {
-        setCollaborators(result.data.collaborators || []);
+        setCollaborators(result.data);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load collaborators');

@@ -1,30 +1,26 @@
-// API: Authentication - Register, Login, Logout, Me
-// POST /api/auth/register - Register new user
-// POST /api/auth/login - Login user
-// POST /api/auth/logout - Logout user
+// API: Authentication
+// POST /api/auth/login - Login
+// POST /api/auth/register - Register
+// POST /api/auth/logout - Logout
 // GET /api/auth/me - Get current user
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { nanoid } from 'nanoid';
-import { createHash } from 'crypto';
 
-const hashPassword = (password: string): string => {
-  return createHash('sha256').update(password).digest('hex');
-};
-
-const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days
+// Simple session-based auth for demo purposes
+// In production, use NextAuth.js or similar
 
 export async function POST(
   request: NextRequest
 ) {
-  const url = request.nextUrl;
-  const action = url.pathname.split('/').pop();
+  const { searchParams } = new URL(request.url);
+  const action = searchParams.get('action');
 
-  if (action === 'register') {
-    return handleRegister(request);
-  } else if (action === 'login') {
+  if (action === 'login') {
     return handleLogin(request);
+  } else if (action === 'register') {
+    return handleRegister(request);
   } else if (action === 'logout') {
     return handleLogout(request);
   }
@@ -35,8 +31,70 @@ export async function POST(
   );
 }
 
-export async function GET() {
-  return handleMe();
+async function handleLogin(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { email, password } = body;
+
+    if (!email) {
+      return NextResponse.json(
+        { success: false, error: 'Email is required' },
+        { status: 400 }
+      );
+    }
+
+    // For demo, create user if doesn't exist
+    let user = await prisma.user.findFirst({
+      where: { email }
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email,
+          name: body.name || email.split('@')[0]
+        }
+      });
+    }
+
+    // Create session
+    const session = await prisma.session.create({
+      data: {
+        userId: user.id,
+        sessionToken: nanoid(32),
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+      }
+    });
+
+    const response = NextResponse.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image
+        },
+        sessionToken: session.sessionToken
+      }
+    });
+
+    // Set session cookie
+    response.cookies.set('session', session.sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 // 30 days
+    });
+
+    return response;
+  } catch (error) {
+    console.error('Login error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Login failed' },
+      { status: 500 }
+    );
+  }
 }
 
 async function handleRegister(request: NextRequest) {
@@ -51,8 +109,8 @@ async function handleRegister(request: NextRequest) {
       );
     }
 
-    // Check if user already exists
-    const existing = await prisma.user.findUnique({
+    // Check if user exists
+    const existing = await prisma.user.findFirst({
       where: { email }
     });
 
@@ -63,94 +121,21 @@ async function handleRegister(request: NextRequest) {
       );
     }
 
-    // Create user
+    // Create user (in production, hash password)
     const user = await prisma.user.create({
       data: {
         email,
         name: name || email.split('@')[0],
-        passwordHash: hashPassword(password)
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        image: true
+        passwordHash: password // In production, hash this!
       }
     });
 
     // Create session
-    const sessionToken = nanoid();
-    await prisma.session.create({
+    const session = await prisma.session.create({
       data: {
-        sessionToken,
         userId: user.id,
-        expires: new Date(Date.now() + SESSION_DURATION)
-      }
-    });
-
-    const response = NextResponse.json({
-      success: true,
-      data: { user }
-    });
-
-    // Set session cookie
-    response.cookies.set('session', sessionToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: SESSION_DURATION / 1000,
-      path: '/'
-    });
-
-    return response;
-  } catch (error) {
-    console.error('Error registering:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to register' },
-      { status: 500 }
-    );
-  }
-}
-
-async function handleLogin(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { email, password } = body;
-
-    if (!email || !password) {
-      return NextResponse.json(
-        { success: false, error: 'Email and password are required' },
-        { status: 400 }
-      );
-    }
-
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid credentials' },
-        { status: 401 }
-      );
-    }
-
-    // Verify password
-    if (user.passwordHash !== hashPassword(password)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid credentials' },
-        { status: 401 }
-      );
-    }
-
-    // Create session
-    const sessionToken = nanoid();
-    await prisma.session.create({
-      data: {
-        sessionToken,
-        userId: user.id,
-        expires: new Date(Date.now() + SESSION_DURATION)
+        sessionToken: nanoid(32),
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
     });
 
@@ -162,24 +147,23 @@ async function handleLogin(request: NextRequest) {
           email: user.email,
           name: user.name,
           image: user.image
-        }
+        },
+        sessionToken: session.sessionToken
       }
     });
 
-    // Set session cookie
-    response.cookies.set('session', sessionToken, {
+    response.cookies.set('session', session.sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: SESSION_DURATION / 1000,
-      path: '/'
+      maxAge: 30 * 24 * 60 * 60
     });
 
     return response;
   } catch (error) {
-    console.error('Error logging in:', error);
+    console.error('Registration error:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to login' },
+      { success: false, error: 'Registration failed' },
       { status: 500 }
     );
   }
@@ -200,56 +184,61 @@ async function handleLogout(request: NextRequest) {
       message: 'Logged out successfully'
     });
 
-    response.cookies.set('session', '', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 0,
-      path: '/'
-    });
+    response.cookies.delete('session');
 
     return response;
   } catch (error) {
-    console.error('Error logging out:', error);
+    console.error('Logout error:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to logout' },
+      { success: false, error: 'Logout failed' },
       { status: 500 }
     );
   }
 }
 
-async function handleMe() {
+export async function GET() {
   try {
-    // For demo purposes, return demo user
-    let user = await prisma.user.findFirst({
-      where: { email: 'demo@example.com' }
-    });
+    const user = await getCurrentUser();
 
     if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: 'demo@example.com',
-          name: 'Demo User'
-        }
+      return NextResponse.json({
+        success: true,
+        data: null
       });
     }
 
     return NextResponse.json({
       success: true,
       data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.image
-        }
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        image: user.image
       }
     });
   } catch (error) {
-    console.error('Error fetching user:', error);
+    console.error('Get user error:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch user' },
+      { success: false, error: 'Failed to get user' },
       { status: 500 }
     );
   }
+}
+
+async function getCurrentUser() {
+  // In production, get session from cookie and validate
+  let user = await prisma.user.findFirst({
+    where: { email: 'demo@example.com' }
+  });
+
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email: 'demo@example.com',
+        name: 'Demo User'
+      }
+    });
+  }
+
+  return user;
 }

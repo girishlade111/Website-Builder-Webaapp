@@ -1,15 +1,10 @@
 // API: Project Assets - List and Upload
-// GET /api/projects/:id/assets - List all assets
-// POST /api/projects/:id/assets - Upload new asset
+// GET /api/projects/[id]/assets - List all assets
+// POST /api/projects/[id]/assets - Upload new asset
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import {
-  uploadAsset,
-  createAssetRecord,
-  listAssets as listAssetsService,
-  getStorageProvider
-} from '@/lib/services/assetStorage';
+import { uploadAsset, createAssetRecord, listAssets } from '@/lib/services/assetStorage';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -28,54 +23,46 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
-const getAssetTypeFromMime = (mimeType: string): string => {
-  if (mimeType.startsWith('image/')) return 'IMAGE';
-  if (mimeType.startsWith('video/')) return 'VIDEO';
-  if (mimeType.startsWith('audio/')) return 'AUDIO';
-  if (mimeType.includes('font')) return 'FONT';
-  if (mimeType.includes('pdf') || mimeType.includes('document')) return 'DOCUMENT';
-  return 'OTHER';
-};
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Get query params
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get('type') || undefined;
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '20');
 
-    const result = await listAssetsService(id, { type });
+    const result = await listAssets(projectId, { type, page, pageSize });
 
     return NextResponse.json({
       success: true,
@@ -96,27 +83,37 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || collaboration.role === 'VIEWER') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
+    // Parse multipart form data
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const name = formData.get('name') as string | null;
+    const name = formData.get('name') as string || file?.name || 'unnamed';
 
     if (!file) {
       return NextResponse.json(
@@ -125,34 +122,39 @@ export async function POST(
       );
     }
 
-    // Validate file size (max 10MB)
-    const maxSize = 10 * 1024 * 1024;
+    // Validate file
+    const maxSize = 50 * 1024 * 1024; // 50MB
     if (file.size > maxSize) {
       return NextResponse.json(
-        { success: false, error: 'File size exceeds 10MB limit' },
+        { success: false, error: 'File size exceeds 50MB limit' },
         { status: 400 }
       );
     }
 
-    // Convert file to buffer
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    // Convert File to Buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    // Upload to storage provider
-    const uploadResult = await uploadAsset(
-      id,
-      buffer,
-      file.name,
-      file.type
-    );
+    // Determine asset type from MIME type
+    const mimeType = file.type;
+    let type: string = 'OTHER';
+    
+    if (mimeType.startsWith('image/')) type = 'IMAGE';
+    else if (mimeType.startsWith('video/')) type = 'VIDEO';
+    else if (mimeType.startsWith('audio/')) type = 'AUDIO';
+    else if (mimeType.includes('font') || mimeType.endsWith('woff') || mimeType.endsWith('ttf')) type = 'FONT';
+    else if (mimeType.includes('pdf') || mimeType.includes('document')) type = 'DOCUMENT';
+
+    // Upload file
+    const uploadResult = await uploadAsset(projectId, buffer, file.name, mimeType);
 
     // Create asset record
     const asset = await createAssetRecord(
-      id,
+      projectId,
       user.id,
-      name || file.name,
-      getAssetTypeFromMime(file.type),
-      file.type,
+      name,
+      type,
+      mimeType,
       file.size,
       uploadResult
     );

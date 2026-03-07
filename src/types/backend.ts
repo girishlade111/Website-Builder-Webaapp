@@ -1,6 +1,6 @@
 // Backend Types for Website Builder Platform
 
-import { BuilderComponent, Page as BuilderPage } from '@/types';
+import { BuilderComponent, Page as BuilderPage, Template as BuilderTemplate, Plugin as BuilderPlugin } from '@/types';
 
 // ============================================
 // PROJECT TYPES
@@ -477,3 +477,6 @@ export interface RealtimeEvent {
   data: any;
   timestamp: number;
 }
+
+// Re-export frontend types for convenience
+export type { BuilderComponent, Page as BuilderPage, Plugin as BuilderPlugin } from '@/types';

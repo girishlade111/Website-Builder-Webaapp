@@ -1,9 +1,9 @@
 // API: Test API Integration
-// POST /api/projects/:id/api-integrations/:integrationId/test - Test integration
+// POST /api/projects/[id]/api-integrations/[integrationId]/test - Test integration
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { executeApiRequest } from '@/lib/services/apiIntegration';
+import { executeApiRequest, getApiIntegration } from '@/lib/services/apiIntegration';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -22,49 +22,42 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; integrationId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id, integrationId } = await params;
+    const { id: projectId, integrationId } = await params;
     const body = await request.json();
-    const { testParams, testBody } = body || {};
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    const integration = await prisma.apiIntegration.findFirst({
-      where: {
-        id: integrationId,
-        projectId: id
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
       }
-    });
+    }
+
+    // Get integration
+    const integration = await getApiIntegration(projectId, integrationId);
 
     if (!integration) {
       return NextResponse.json(
@@ -74,39 +67,17 @@ export async function POST(
     }
 
     // Execute test request
-    const result = await executeApiRequest(
-      {
-        id: integration.id,
-        name: integration.name,
-        endpoint: integration.endpoint,
-        method: integration.method as any,
-        headers: integration.headers as Record<string, string>,
-        authType: integration.authType as any,
-        authConfig: integration.authConfig as any,
-        responseMapping: integration.responseMapping as any
-      },
-      {
-        params: testParams,
-        body: testBody
-      }
-    );
+    const result = await executeApiRequest(integration, body);
 
     return NextResponse.json({
       success: true,
-      data: {
-        request: {
-          endpoint: integration.endpoint,
-          method: integration.method,
-          params: testParams,
-          body: testBody
-        },
-        response: result
-      }
+      data: result,
+      message: result.success ? 'Test successful' : 'Test failed'
     });
   } catch (error) {
-    console.error('Error testing integration:', error);
+    console.error('Error testing API integration:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to test integration' },
+      { success: false, error: 'Failed to test API integration' },
       { status: 500 }
     );
   }

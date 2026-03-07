@@ -1,6 +1,6 @@
-// API: Collaborator by ID - Update role and Remove
-// PUT /api/projects/:id/collaborators/:userId - Update collaborator role
-// DELETE /api/projects/:id/collaborators/:userId - Remove collaborator
+// API: Collaborator by User ID - Update and Remove
+// PUT /api/projects/[id]/collaborators/[userId] - Update role
+// DELETE /api/projects/[id]/collaborators/[userId] - Remove collaborator
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -22,55 +22,45 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; userId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id, userId } = await params;
+    const { id: projectId, userId } = await params;
     const body = await request.json();
-    const { role } = body;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
     // Only owner or admin can update roles
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || (collaboration.role !== 'OWNER' && collaboration.role !== 'ADMIN')) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
-    // Cannot change owner role
-    if (userId === project.ownerId) {
+    const { role } = body;
+
+    if (!role) {
       return NextResponse.json(
-        { success: false, error: 'Cannot change owner role' },
+        { success: false, error: 'Role is required' },
         { status: 400 }
       );
     }
@@ -84,47 +74,49 @@ export async function PUT(
       );
     }
 
-    const collaboration = await prisma.collaboration.updateMany({
-      where: {
-        projectId: id,
-        userId
-      },
-      data: { role: role as any }
+    // Cannot change owner role
+    if (userId === project.ownerId) {
+      return NextResponse.json(
+        { success: false, error: 'Cannot change owner role' },
+        { status: 400 }
+      );
+    }
+
+    // Check if collaboration exists
+    const existing = await prisma.collaboration.findFirst({
+      where: { userId, projectId }
     });
 
-    if (collaboration.count === 0) {
+    if (!existing) {
       return NextResponse.json(
-        { success: false, error: 'Collaboration not found' },
+        { success: false, error: 'Collaborator not found' },
         { status: 404 }
       );
     }
 
-    const updated = await prisma.collaboration.findFirst({
-      where: {
-        projectId: id,
-        userId
-      },
+    const updated = await prisma.collaboration.updateMany({
+      where: { userId, projectId },
+      data: { role }
+    });
+
+    const collaboration = await prisma.collaboration.findFirst({
+      where: { userId, projectId },
       include: {
         user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            image: true
-          }
+          select: { id: true, name: true, email: true, image: true }
         }
       }
     });
 
     return NextResponse.json({
       success: true,
-      data: updated,
+      data: collaboration,
       message: 'Role updated successfully'
     });
   } catch (error) {
-    console.error('Error updating role:', error);
+    console.error('Error updating collaborator:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to update role' },
+      { success: false, error: 'Failed to update collaborator' },
       { status: 500 }
     );
   }
@@ -136,54 +128,56 @@ export async function DELETE(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id, userId } = await params;
+    const { id: projectId, userId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
     // Only owner or admin can remove collaborators
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || (collaboration.role !== 'OWNER' && collaboration.role !== 'ADMIN')) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
     // Cannot remove owner
     if (userId === project.ownerId) {
       return NextResponse.json(
-        { success: false, error: 'Cannot remove project owner' },
+        { success: false, error: 'Cannot remove owner' },
         { status: 400 }
       );
     }
 
-    // Cannot remove yourself
-    if (userId === user.id) {
-      return NextResponse.json(
-        { success: false, error: 'Cannot remove yourself. Transfer ownership first.' },
-        { status: 400 }
-      );
-    }
-
-    const result = await prisma.collaboration.deleteMany({
-      where: {
-        projectId: id,
-        userId
-      }
+    // Check if collaboration exists
+    const existing = await prisma.collaboration.findFirst({
+      where: { userId, projectId }
     });
 
-    if (result.count === 0) {
+    if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Collaborator not found' },
         { status: 404 }
       );
     }
+
+    await prisma.collaboration.deleteMany({
+      where: { userId, projectId }
+    });
 
     return NextResponse.json({
       success: true,

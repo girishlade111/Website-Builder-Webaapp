@@ -1,6 +1,6 @@
 // API: Project Plugins - List and Install
-// GET /api/projects/:id/plugins - List installed plugins
-// POST /api/projects/:id/plugins - Install plugin
+// GET /api/projects/[id]/plugins - List installed plugins
+// POST /api/projects/[id]/plugins - Install plugin
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -22,65 +22,50 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
     const installedPlugins = await prisma.installedPlugin.findMany({
-      where: { projectId: id },
+      where: { projectId },
       include: {
-        plugin: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            version: true,
-            type: true,
-            manifest: true,
-            schema: true
-          }
-        }
+        plugin: true
       },
       orderBy: { installedAt: 'desc' }
     });
 
     return NextResponse.json({
       success: true,
-      data: installedPlugins.map(ip => ({
-        ...ip,
-        plugin: ip.plugin
-      }))
+      data: installedPlugins
     });
   } catch (error) {
     console.error('Error fetching plugins:', error);
@@ -97,25 +82,35 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
     const body = await request.json();
-    const { pluginId, settings } = body;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || collaboration.role === 'VIEWER') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
+
+    const { pluginId, settings } = body;
 
     if (!pluginId) {
       return NextResponse.json(
@@ -124,7 +119,7 @@ export async function POST(
       );
     }
 
-    // Check if plugin exists
+    // Get plugin
     const plugin = await prisma.plugin.findUnique({
       where: { id: pluginId }
     });
@@ -138,10 +133,7 @@ export async function POST(
 
     // Check if already installed
     const existing = await prisma.installedPlugin.findFirst({
-      where: {
-        projectId: id,
-        pluginId
-      }
+      where: { projectId, pluginId }
     });
 
     if (existing) {
@@ -152,36 +144,29 @@ export async function POST(
     }
 
     // Install plugin
-    const installedPlugin = await prisma.installedPlugin.create({
+    const installed = await prisma.installedPlugin.create({
       data: {
-        projectId: id,
+        projectId,
         pluginId,
         settings: settings || {}
       },
       include: {
-        plugin: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            version: true,
-            type: true,
-            manifest: true
-          }
-        }
+        plugin: true
       }
     });
 
     // Update plugin install count
     await prisma.plugin.update({
       where: { id: pluginId },
-      data: { installs: { increment: 1 } }
+      data: {
+        installs: { increment: 1 }
+      }
     });
 
     return NextResponse.json({
       success: true,
-      data: installedPlugin,
-      message: 'Plugin installed successfully'
+      data: installed,
+      message: `Plugin "${plugin.name}" installed successfully`
     }, { status: 201 });
   } catch (error) {
     console.error('Error installing plugin:', error);

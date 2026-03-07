@@ -1,9 +1,20 @@
-// API: Project Settings - Get and Update
-// GET /api/projects/:id/settings - Get all settings
-// PUT /api/projects/:id/settings - Update settings
+// API: Project Settings
+// GET /api/projects/[id]/settings - Get all settings
+// PUT /api/projects/[id]/settings - Update all settings
+// PUT /api/projects/[id]/settings/seo - Update SEO settings
+// PUT /api/projects/[id]/settings/domain - Update domain settings
+// PUT /api/projects/[id]/settings/analytics - Update analytics settings
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import {
+  getProjectSettings,
+  updateProjectSettings,
+  updateSeoSettings,
+  updateDomainSettings,
+  updateAnalyticsSettings,
+  validateDomainConfiguration
+} from '@/lib/services/projectSettings';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -22,42 +33,47 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    const settings = (project.settings as any) || {};
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
+    const settings = await getProjectSettings(projectId);
+
+    if (!settings) {
+      return NextResponse.json(
+        { success: false, error: 'Settings not found' },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
@@ -78,39 +94,39 @@ export async function PUT(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
     const body = await request.json();
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || collaboration.role === 'VIEWER') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
-    const currentSettings = (project.settings as any) || {};
-    const updatedSettings = {
-      ...currentSettings,
-      ...body
-    };
-
-    const updated = await prisma.project.update({
-      where: { id },
-      data: { settings: updatedSettings }
-    });
+    const settings = await updateProjectSettings(projectId, body);
 
     return NextResponse.json({
       success: true,
-      data: updatedSettings,
+      data: settings,
       message: 'Settings updated successfully'
     });
   } catch (error) {

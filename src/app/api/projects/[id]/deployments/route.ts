@@ -1,6 +1,6 @@
 // API: Project Deployments - List and Create
-// GET /api/projects/:id/deployments - List all deployments
-// POST /api/projects/:id/deployments - Create new deployment
+// GET /api/projects/[id]/deployments - List all deployments
+// POST /api/projects/[id]/deployments - Create new deployment
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -23,46 +23,44 @@ const getCurrentUser = async () => {
   return user;
 };
 
-const checkProjectAccess = async (projectId: string, userId: string) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      collaborations: {
-        where: { userId }
-      }
-    }
-  });
-
-  if (!project) return null;
-  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
-  if (project.collaborations.length > 0) {
-    return { ...project, role: project.collaborations[0].role };
-  }
-  return null;
-};
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    const deployments = await getDeploymentHistory(id, 20);
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    }
+
+    const deployments = await getDeploymentHistory(projectId, 20);
 
     return NextResponse.json({
       success: true,
-      data: { deployments }
+      data: deployments
     });
   } catch (error) {
     console.error('Error fetching deployments:', error);
@@ -79,28 +77,39 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id } = await params;
+    const { id: projectId } = await params;
     const body = await request.json();
-    const { environment = 'PRODUCTION' } = body;
 
-    const project = await checkProjectAccess(id, user.id);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: { pages: true }
+    });
 
     if (!project) {
       return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
+        { success: false, error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    // Check access
+    if (project.ownerId !== user.id) {
+      const collaboration = await prisma.collaboration.findFirst({
+        where: { userId: user.id, projectId }
+      });
+
+      if (!collaboration || collaboration.role === 'VIEWER') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
+    const { environment = 'production', customDomain } = body;
+
     // Validate environment
-    const validEnvironments = ['DEVELOPMENT', 'STAGING', 'PRODUCTION'];
+    const validEnvironments = ['development', 'staging', 'production'];
     if (!validEnvironments.includes(environment)) {
       return NextResponse.json(
         { success: false, error: 'Invalid environment' },
@@ -111,9 +120,8 @@ export async function POST(
     // Create deployment record
     const deployment = await prisma.deployment.create({
       data: {
-        projectId: id,
-        environment: environment as any,
-        status: 'PENDING',
+        projectId,
+        environment: environment.toUpperCase() as any,
         triggeredById: user.id
       },
       include: {
@@ -124,9 +132,12 @@ export async function POST(
     });
 
     // Trigger deployment pipeline (async)
-    triggerDeploymentPipeline(id, deployment.id, {
-      environment: environment.toLowerCase() as any
-    }).catch(console.error);
+    triggerDeploymentPipeline(projectId, deployment.id, {
+      environment: environment as 'development' | 'staging' | 'production',
+      customDomain
+    }).catch(err => {
+      console.error('Deployment pipeline error:', err);
+    });
 
     return NextResponse.json({
       success: true,
