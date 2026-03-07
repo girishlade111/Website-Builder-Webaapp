@@ -8,7 +8,10 @@
     "edit": "Editar",
     "components": "Componentes",
     "properties": "Propiedades",
-    "code": "Codigo"
+    "code": "Codigo",
+    "desktop": "Escritorio",
+    "tablet": "Tableta",
+    "mobile": "Movil"
   },
   "Device": {
     "desktop": "Escritorio",

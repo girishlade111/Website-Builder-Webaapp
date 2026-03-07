@@ -8,7 +8,10 @@
     "edit": "Edit",
     "components": "Components",
     "properties": "Properties",
-    "code": "Code"
+    "code": "Code",
+    "desktop": "Desktop",
+    "tablet": "Tablet",
+    "mobile": "Mobile"
   },
   "Device": {
     "desktop": "Desktop",
