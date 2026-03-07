@@ -1,6 +1,6 @@
 // API: Project Settings - Get and Update
-// GET /api/projects/:id/settings - Get project settings
-// PUT /api/projects/:id/settings - Update project settings
+// GET /api/projects/:id/settings - Get all settings
+// PUT /api/projects/:id/settings - Update settings
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -97,18 +97,15 @@ export async function PUT(
       );
     }
 
-    // Merge with existing settings
-    const existingSettings = (project.settings as any) || {};
+    const currentSettings = (project.settings as any) || {};
     const updatedSettings = {
-      ...existingSettings,
+      ...currentSettings,
       ...body
     };
 
     const updated = await prisma.project.update({
       where: { id },
-      data: {
-        settings: updatedSettings
-      }
+      data: { settings: updatedSettings }
     });
 
     return NextResponse.json({

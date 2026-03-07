@@ -1,121 +1,97 @@
-# Website Builder Platform - Backend Documentation
+# Website Builder Platform - Complete Documentation
 
 A fully functional developer-focused website builder platform with visual builder, real-time collaboration, custom code components, API integrations, plugin architecture, template marketplace, asset management, version control, and one-click Vercel deployment.
 
-## Tech Stack
+## 🚀 Features
+
+### Core Features
+
+| Feature | Description |
+|---------|-------------|
+| **Project System** | Create and manage multiple website projects with pages, components, assets, and settings |
+| **Visual Page Builder** | Drag-and-drop interface for building pages with customizable components |
+| **Real-time Collaboration** | Multi-user editing with Yjs CRDT, cursor presence, and live updates |
+| **Code Components** | Sandboxed execution for custom HTML, CSS, and React components |
+| **API Integration** | Connect external APIs with configurable authentication and response mapping |
+| **Asset Management** | Upload and manage images, videos, documents with cloud storage support |
+| **Template System** | Pre-built templates for quick project setup |
+| **Plugin Marketplace** | Extend functionality with plugins for analytics, forms, payments |
+| **Version History** | Track changes and rollback to previous versions |
+| **Vercel Deployment** | One-click deployment to Vercel with custom domain support |
+| **Export System** | Export as static site or Next.js project |
+
+## 🛠 Tech Stack
 
 ### Backend
-- **Runtime**: Node.js
-- **Framework**: Next.js API Routes
+- **Runtime**: Node.js 18+
+- **Framework**: Next.js 14+ with App Router
 - **Database**: PostgreSQL (via Supabase or self-hosted)
 - **ORM**: Prisma
-- **Real-time**: Yjs CRDT for collaboration
+- **Real-time**: Yjs CRDT + WebSockets
+
+### Frontend
+- **Framework**: React 19 with Next.js
+- **Styling**: Tailwind CSS 4
+- **State Management**: Zustand
+- **Drag & Drop**: @dnd-kit
 
 ### Storage
-- **Page Schema**: JSON storage in PostgreSQL
-- **Assets**: Local storage (with S3/Cloudinary support)
+- **Page Schema**: JSON in PostgreSQL
+- **Assets**: Local storage, AWS S3, or Cloudinary
 
 ### Deployment
 - **Platform**: Vercel API integration
 
-## Features
-
-### 1. Project System
-- Create multiple projects
-- Project structure with pages, components, assets, settings
-- Each project represents one website
-
-### 2. Page Builder Data Model
-- Store page structure as JSON schema
-- Components with styles, props, and children
-- Real-time updates to schema on canvas edits
-
-### 3. Real-time Collaboration
-- Multi-user editing (Google Docs-style)
-- Yjs CRDT-based collaboration
-- Cursor presence indicators
-- Real-time state synchronization
-
-### 4. Code Component Execution
-- Sandboxed execution using vm2
-- Support for HTML, CSS, JavaScript, React components
-- Security validation for unsafe code
-
-### 5. API Integration Component
-- Connect external APIs
-- Configure endpoints, methods, headers
-- Authentication support (API Key, OAuth2, Bearer, Basic)
-- Response mapping to UI components
-
-### 6. Asset Management
-- Upload images, videos, documents, fonts
-- Cloud storage integration (S3, Cloudinary)
-- Asset library per project
-- Direct insertion into components
-
-### 7. Template System
-- Predefined JSON schema templates
-- Categories: Business, Portfolio, E-commerce, Blog
-- One-click template application
-- Custom template creation
-
-### 8. Plugin & Extension Marketplace
-- Component plugins
-- Feature plugins (Analytics, SEO, Forms)
-- Integration plugins (Stripe, PayPal)
-- Install/uninstall per project
-
-### 9. Export System
-- Export as static site (HTML/CSS)
-- Export as Next.js project
-- Export for Vercel deployment
-
-### 10. Vercel Deployment System
-- One-click publish to Vercel
-- Automatic Next.js code generation
-- Custom domain support
-- Environment variables management
-
-### 11. Version History
-- Track all project versions
-- Rollback to any previous version
-- Version messages/commit notes
-- Automatic versioning on save
-
-### 12. Project Settings
-- SEO metadata (title, description, keywords, OG tags)
-- Domain configuration
-- Favicon upload
-- Analytics scripts (Google Analytics, Plausible)
-- Custom head/body scripts
-
-## Setup
+## 📦 Installation
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 18 or higher
 - PostgreSQL database
-- Vercel account (optional, for deployment)
+- (Optional) Vercel account for deployment features
 
-### Installation
+### 1. Clone and Install Dependencies
 
-1. **Clone and install dependencies**
 ```bash
 npm install
 ```
 
-2. **Set up environment variables**
+### 2. Configure Environment Variables
+
+Copy `.env.example` to `.env`:
+
 ```bash
 cp .env.example .env
 ```
 
 Edit `.env` with your configuration:
+
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/website_builder"
+# Database Configuration
+DATABASE_URL="postgresql://user:password@localhost:5432/website_builder?schema=public"
+
+# Vercel Configuration (Optional)
 VERCEL_TOKEN="your-vercel-token"
 VERCEL_TEAM_ID="your-team-id"
+
+# Storage Configuration (Optional - local storage used by default)
+# AWS S3
+AWS_ACCESS_KEY_ID=""
+AWS_SECRET_ACCESS_KEY=""
+AWS_REGION="us-east-1"
+AWS_S3_BUCKET=""
+
+# Cloudinary (alternative to S3)
+CLOUDINARY_CLOUD_NAME=""
+CLOUDINARY_API_KEY=""
+CLOUDINARY_API_SECRET=""
+
+# Application
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+SESSION_SECRET="your-secret-change-in-production"
 ```
 
-3. **Set up database**
+### 3. Initialize Database
+
 ```bash
 # Generate Prisma client
 npm run db:generate
@@ -127,111 +103,153 @@ npm run db:push
 npm run db:seed
 ```
 
-4. **Run development server**
+### 4. Run Development Server
+
 ```bash
 npm run dev
 ```
 
-## API Reference
+Open [http://localhost:3000](http://localhost:3000) to access the dashboard.
+
+## 📁 Project Structure
+
+```
+website-builder/
+├── prisma/
+│   ├── schema.prisma      # Database schema
+│   └── seed.ts            # Seed data for templates/plugins
+├── src/
+│   ├── app/
+│   │   ├── api/           # API routes
+│   │   │   ├── projects/  # Project CRUD endpoints
+│   │   │   ├── templates/ # Template endpoints
+│   │   │   ├── plugins/   # Plugin endpoints
+│   │   │   └── collaboration/ # Real-time collab
+│   │   └── [locale]/
+│   │       ├── dashboard/ # Project dashboard
+│   │       └── builder/   # Visual builder
+│   ├── builder/
+│   │   ├── canvas/        # Canvas component
+│   │   ├── sidebar/       # Component library
+│   │   ├── properties/    # Properties panel
+│   │   ├── toolbar/       # Toolbar
+│   │   ├── assets/        # Asset library
+│   │   ├── deployment/    # Deployment panel
+│   │   └── collaboration/ # Collaboration UI
+│   ├── lib/
+│   │   ├── services/      # Business logic
+│   │   │   ├── deployment.ts
+│   │   │   ├── codeGeneration.ts
+│   │   │   ├── codeExecution.ts
+│   │   │   ├── apiIntegration.ts
+│   │   │   └── assetStorage.ts
+│   │   ├── apiClient.ts   # Frontend API client
+│   │   └── prisma.ts      # Prisma client
+│   ├── stores/
+│   │   └── useBuilderStore.ts  # Zustand store
+│   └── types/
+│       ├── components.ts  # Component definitions
+│       └── backend.ts     # TypeScript types
+└── server.ts              # Custom server with WebSocket
+```
+
+## 📖 API Reference
 
 ### Projects
 
-```
-GET    /api/projects              - List projects
-POST   /api/projects              - Create project
-GET    /api/projects/:id          - Get project
-PUT    /api/projects/:id          - Update project
-DELETE /api/projects/:id          - Delete project
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects` | List all projects |
+| POST | `/api/projects` | Create new project |
+| GET | `/api/projects/:id` | Get project by ID |
+| PUT | `/api/projects/:id` | Update project |
+| DELETE | `/api/projects/:id` | Delete project |
 
 ### Pages
 
-```
-GET    /api/projects/:id/pages           - List pages
-POST   /api/projects/:id/pages           - Create page
-GET    /api/projects/:id/pages/:pageId   - Get page
-PUT    /api/projects/:id/pages/:pageId   - Update page
-DELETE /api/projects/:id/pages/:pageId   - Delete page
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects/:id/pages` | List pages |
+| POST | `/api/projects/:id/pages` | Create page |
+| GET | `/api/projects/:id/pages/:pageId` | Get page |
+| PUT | `/api/projects/:id/pages/:pageId` | Update page |
+| DELETE | `/api/projects/:id/pages/:pageId` | Delete page |
 
 ### Versions
 
-```
-GET    /api/projects/:id/versions              - List versions
-POST   /api/projects/:id/versions              - Create version
-POST   /api/projects/:id/versions/:id/rollback - Rollback to version
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects/:id/versions` | List versions |
+| POST | `/api/projects/:id/versions` | Create version |
+| POST | `/api/projects/:id/versions/:id/rollback` | Rollback |
 
 ### Assets
 
-```
-GET  /api/projects/:id/assets    - List assets
-POST /api/projects/:id/assets    - Upload asset
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects/:id/assets` | List assets |
+| POST | `/api/projects/:id/assets` | Upload asset |
 
 ### Collaborators
 
-```
-GET    /api/projects/:id/collaborators          - List collaborators
-POST   /api/projects/:id/collaborators          - Invite collaborator
-PUT    /api/projects/:id/collaborators/:userId  - Update role
-DELETE /api/projects/:id/collaborators/:userId  - Remove collaborator
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects/:id/collaborators` | List collaborators |
+| POST | `/api/projects/:id/collaborators` | Invite collaborator |
+| PUT | `/api/projects/:id/collaborators/:userId` | Update role |
+| DELETE | `/api/projects/:id/collaborators/:userId` | Remove |
 
 ### Deployments
 
-```
-GET  /api/projects/:id/deployments  - List deployments
-POST /api/projects/:id/deployments  - Create deployment
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects/:id/deployments` | List deployments |
+| POST | `/api/projects/:id/deployments` | Create deployment |
+
+### Settings
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects/:id/settings` | Get all settings |
+| PUT | `/api/projects/:id/settings` | Update settings |
+| PUT | `/api/projects/:id/settings/seo` | Update SEO |
+| PUT | `/api/projects/:id/settings/domain` | Update domain |
+| PUT | `/api/projects/:id/settings/analytics` | Update analytics |
+
+### Plugins & Integrations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/templates` | List templates |
+| GET | `/api/plugins` | List plugins |
+| GET | `/api/projects/:id/plugins` | List installed plugins |
+| POST | `/api/projects/:id/plugins` | Install plugin |
+| GET | `/api/projects/:id/api-integrations` | List API integrations |
+| POST | `/api/projects/:id/api-integrations` | Create integration |
+| POST | `/api/projects/:id/api-integrations/:id/test` | Test integration |
 
 ### Export
 
-```
-POST /api/projects/:id/export  - Export project
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/projects/:id/export?format=nextjs\|static` | Export project |
 
-### Templates
+## 🎨 Component System
 
-```
-GET  /api/templates   - List templates
-POST /api/templates   - Create template
-```
+### Component Categories
 
-### Plugins
+| Category | Components |
+|----------|------------|
+| **Basic** | section, container, divider, spacer |
+| **Text** | heading, paragraph, subheading, list, quote |
+| **Media** | image, video, gallery, backgroundVideo |
+| **Layout** | hero, grid, columns, cards, tabs, accordion |
+| **Forms** | input, textarea, select, checkbox, contactForm |
+| **Navigation** | navbar, sidebarNav, breadcrumbs |
+| **Ecommerce** | productCard, productGrid, shoppingCart |
+| **Advanced** | html, customCode, apiComponent |
 
-```
-GET  /api/plugins   - List plugins
-POST /api/plugins   - Create plugin
-```
-
-### Collaboration
-
-```
-GET  /api/collaboration/:projectId  - Get collaboration state
-POST /api/collaboration/:projectId  - Update collaboration state
-```
-
-## Database Schema
-
-### Core Models
-
-- **User**: User accounts
-- **Project**: Website projects
-- **Page**: Pages within projects
-- **ProjectVersion**: Version history for projects
-- **PageVersion**: Version history for pages
-- **Collaboration**: Project collaborators
-- **CollaborationSession**: Real-time collaboration state
-- **Asset**: Uploaded media files
-- **Template**: Pre-built templates
-- **Plugin**: Extendable plugins
-- **InstalledPlugin**: Project plugin installations
-- **ApiIntegration**: API connections
-- **Deployment**: Deployment records
-- **ProjectAnalytics**: Usage analytics
-
-## Page Schema Format
+### Page Schema Format
 
 ```typescript
 interface PageSchema {
@@ -253,49 +271,25 @@ interface BuilderComponent {
 }
 ```
 
-## Component Types
+## 🔐 Security
 
-### Basic
-- section, container, divider, spacer
-
-### Text
-- heading, paragraph, subheading, list, quote
-
-### Media
-- image, video, gallery, backgroundVideo
-
-### Layout
-- hero, grid, columns, cards, tabs, accordion
-
-### Forms
-- input, textarea, select, checkbox, loginForm, signupForm, contactForm
-
-### Ecommerce
-- productCard, productGrid, shoppingCart, checkout, paymentBlock
-
-### Navigation
-- navbar, sidebarNav, breadcrumbs
-
-### Advanced
-- html, customCode, apiComponent
-
-## Security Considerations
-
-1. **Code Execution**: All custom code runs in sandboxed VM
+1. **Code Execution**: Custom code runs in sandboxed VM (vm2)
 2. **Input Validation**: All API inputs are validated
 3. **Access Control**: Project access verified on all endpoints
 4. **XSS Prevention**: HTML sanitization for custom code
-5. **Rate Limiting**: Implement rate limiting in production
+5. **Rate Limiting**: Recommended for production
 
-## Deployment
+## 🚀 Deployment
 
 ### Vercel Setup
 
 1. Create Vercel account at https://vercel.com
 2. Generate API token in Settings > API
 3. Add token to `.env`:
+
 ```env
 VERCEL_TOKEN="your-token"
+VERCEL_TEAM_ID="your-team-id"
 ```
 
 ### Production Database
@@ -306,14 +300,72 @@ For production, use a managed PostgreSQL service:
 - [Railway](https://railway.app)
 - AWS RDS
 
-## Contributing
+### Build Commands
+
+```bash
+# Development
+npm run dev
+
+# Production build
+npm run build
+npm start
+
+# Database commands
+npm run db:generate
+npm run db:push
+npm run db:migrate
+npm run db:seed
+
+# Testing
+npm run test
+npm run test:run
+```
+
+## 🧪 Testing
+
+```bash
+# Run tests in watch mode
+npm run test
+
+# Run tests once
+npm run test:run
+
+# Run with coverage
+npm run test:coverage
+```
+
+## 📝 Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start development server |
+| `npm run dev:ws` | Start with WebSocket server |
+| `npm run build` | Build for production |
+| `npm run start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run test` | Run tests |
+| `npm run db:generate` | Generate Prisma client |
+| `npm run db:push` | Push schema to database |
+| `npm run db:migrate` | Run migrations |
+| `npm run db:seed` | Seed database |
+| `npm run db:studio` | Open Prisma Studio |
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create feature branch
-3. Make changes
-4. Run tests
-5. Submit pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## License
+## 📄 License
 
 MIT License - See LICENSE file for details
+
+## 🙏 Acknowledgments
+
+- [Next.js](https://nextjs.org)
+- [Prisma](https://prisma.io)
+- [Yjs](https://yjs.dev)
+- [Vercel](https://vercel.com)
+- [Tailwind CSS](https://tailwindcss.com)

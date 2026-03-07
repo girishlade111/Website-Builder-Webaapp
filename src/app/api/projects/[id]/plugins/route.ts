@@ -1,8 +1,6 @@
-// API: Project Plugins - List, Install, Update, Uninstall
+// API: Project Plugins - List and Install
 // GET /api/projects/:id/plugins - List installed plugins
 // POST /api/projects/:id/plugins - Install plugin
-// PUT /api/projects/:id/plugins/:pluginId - Update plugin settings
-// DELETE /api/projects/:id/plugins/:pluginId - Uninstall plugin
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -73,12 +71,16 @@ export async function GET(
             schema: true
           }
         }
-      }
+      },
+      orderBy: { installedAt: 'desc' }
     });
 
     return NextResponse.json({
       success: true,
-      data: installedPlugins
+      data: installedPlugins.map(ip => ({
+        ...ip,
+        plugin: ip.plugin
+      }))
     });
   } catch (error) {
     console.error('Error fetching plugins:', error);
@@ -108,10 +110,17 @@ export async function POST(
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions' },
         { status: 403 }
+      );
+    }
+
+    if (!pluginId) {
+      return NextResponse.json(
+        { success: false, error: 'Plugin ID is required' },
+        { status: 400 }
       );
     }
 
@@ -143,7 +152,7 @@ export async function POST(
     }
 
     // Install plugin
-    const installed = await prisma.installedPlugin.create({
+    const installedPlugin = await prisma.installedPlugin.create({
       data: {
         projectId: id,
         pluginId,
@@ -156,7 +165,8 @@ export async function POST(
             name: true,
             description: true,
             version: true,
-            type: true
+            type: true,
+            manifest: true
           }
         }
       }
@@ -165,14 +175,12 @@ export async function POST(
     // Update plugin install count
     await prisma.plugin.update({
       where: { id: pluginId },
-      data: {
-        installs: { increment: 1 }
-      }
+      data: { installs: { increment: 1 } }
     });
 
     return NextResponse.json({
       success: true,
-      data: installed,
+      data: installedPlugin,
       message: 'Plugin installed successfully'
     }, { status: 201 });
   } catch (error) {

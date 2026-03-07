@@ -2,16 +2,10 @@
 // GET /api/projects/:id/api-integrations/:integrationId - Get integration
 // PUT /api/projects/:id/api-integrations/:integrationId - Update integration
 // DELETE /api/projects/:id/api-integrations/:integrationId - Delete integration
-// POST /api/projects/:id/api-integrations/:integrationId/test - Test integration
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import {
-  executeApiRequest,
-  getApiIntegration,
-  updateApiIntegration,
-  deleteApiIntegration
-} from '@/lib/services/apiIntegration';
+import { executeApiRequest } from '@/lib/services/apiIntegration';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -65,7 +59,12 @@ export async function GET(
       );
     }
 
-    const integration = await getApiIntegration(id, integrationId);
+    const integration = await prisma.apiIntegration.findFirst({
+      where: {
+        id: integrationId,
+        projectId: id
+      }
+    });
 
     if (!integration) {
       return NextResponse.json(
@@ -112,18 +111,36 @@ export async function PUT(
       );
     }
 
-    const integration = await updateApiIntegration(id, integrationId, body);
+    const integration = await prisma.apiIntegration.updateMany({
+      where: {
+        id: integrationId,
+        projectId: id
+      },
+      data: {
+        ...(body.name && { name: body.name }),
+        ...(body.endpoint && { endpoint: body.endpoint }),
+        ...(body.method && { method: body.method }),
+        ...(body.headers && { headers: body.headers }),
+        ...(body.authType && { authType: body.authType }),
+        ...(body.authConfig && { authConfig: body.authConfig }),
+        ...(body.responseMapping && { responseMapping: body.responseMapping })
+      }
+    });
 
-    if (!integration) {
+    if (integration.count === 0) {
       return NextResponse.json(
         { success: false, error: 'Integration not found' },
         { status: 404 }
       );
     }
 
+    const updated = await prisma.apiIntegration.findUnique({
+      where: { id: integrationId }
+    });
+
     return NextResponse.json({
       success: true,
-      data: integration,
+      data: updated,
       message: 'Integration updated successfully'
     });
   } catch (error) {
@@ -159,14 +176,12 @@ export async function DELETE(
       );
     }
 
-    const deleted = await deleteApiIntegration(id, integrationId);
-
-    if (!deleted) {
-      return NextResponse.json(
-        { success: false, error: 'Integration not found' },
-        { status: 404 }
-      );
-    }
+    await prisma.apiIntegration.deleteMany({
+      where: {
+        id: integrationId,
+        projectId: id
+      }
+    });
 
     return NextResponse.json({
       success: true,
@@ -177,69 +192,6 @@ export async function DELETE(
     return NextResponse.json(
       { success: false, error: 'Failed to delete integration' },
       { status: 500 }
-    );
-  }
-}
-
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string; integrationId: string }> }
-) {
-  try {
-    const user = await getCurrentUser();
-    const { id, integrationId } = await params;
-    const body = await request.json();
-    const { testParams, testBody } = body;
-
-    const project = await checkProjectAccess(id, user.id);
-
-    if (!project) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found or access denied' },
-        { status: 404 }
-      );
-    }
-
-    const integration = await getApiIntegration(id, integrationId);
-
-    if (!integration) {
-      return NextResponse.json(
-        { success: false, error: 'Integration not found' },
-        { status: 404 }
-      );
-    }
-
-    // Execute test request
-    const result = await executeApiRequest(integration, {
-      params: testParams,
-      body: testBody
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        request: {
-          endpoint: integration.endpoint,
-          method: integration.method,
-          params: testParams,
-          body: testBody
-        },
-        response: result
-      }
-    });
-  } catch (error: any) {
-    console.error('Error testing integration:', error);
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          request: {},
-          response: {
-            success: false,
-            error: error.message || 'Test failed'
-          }
-        }
-      }
     );
   }
 }

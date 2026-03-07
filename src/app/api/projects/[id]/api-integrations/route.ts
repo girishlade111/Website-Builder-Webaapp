@@ -4,7 +4,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { executeApiRequest, createApiIntegration, listApiIntegrations } from '@/lib/services/apiIntegration';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -58,7 +57,10 @@ export async function GET(
       );
     }
 
-    const integrations = await listApiIntegrations(id);
+    const integrations = await prisma.apiIntegration.findMany({
+      where: { projectId: id },
+      orderBy: { createdAt: 'desc' }
+    });
 
     return NextResponse.json({
       success: true,
@@ -81,7 +83,15 @@ export async function POST(
     const user = await getCurrentUser();
     const { id } = await params;
     const body = await request.json();
-    const { name, endpoint, method = 'GET', headers, authType, authConfig, responseMapping } = body;
+    const {
+      name,
+      endpoint,
+      method = 'GET',
+      headers = {},
+      authType = 'NONE',
+      authConfig = {},
+      responseMapping = {}
+    } = body;
 
     const project = await checkProjectAccess(id, user.id);
 
@@ -106,14 +116,17 @@ export async function POST(
       );
     }
 
-    const integration = await createApiIntegration(id, {
-      name,
-      endpoint,
-      method,
-      headers,
-      authType,
-      authConfig,
-      responseMapping
+    const integration = await prisma.apiIntegration.create({
+      data: {
+        projectId: id,
+        name,
+        endpoint,
+        method: method as any,
+        headers,
+        authType: authType as any,
+        authConfig,
+        responseMapping
+      }
     });
 
     return NextResponse.json({

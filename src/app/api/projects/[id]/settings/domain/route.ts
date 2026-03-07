@@ -1,4 +1,5 @@
-// API: Project Settings - Domain
+// API: Project Domain Settings
+// GET /api/projects/:id/settings/domain - Get domain settings
 // PUT /api/projects/:id/settings/domain - Update domain settings
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -39,6 +40,39 @@ const checkProjectAccess = async (projectId: string, userId: string) => {
   return null;
 };
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUser();
+    const { id } = await params;
+
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
+      return NextResponse.json(
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    const settings = (project.settings as any) || {};
+    const domain = settings.domain || {};
+
+    return NextResponse.json({
+      success: true,
+      data: domain
+    });
+  } catch (error) {
+    console.error('Error fetching domain settings:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch domain settings' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -65,11 +99,11 @@ export async function PUT(
       );
     }
 
-    const existingSettings = (project.settings as any) || {};
+    const currentSettings = (project.settings as any) || {};
     const updatedSettings = {
-      ...existingSettings,
+      ...currentSettings,
       domain: {
-        ...(existingSettings.domain || {}),
+        ...(currentSettings.domain || {}),
         ...domain
       }
     };
@@ -77,7 +111,13 @@ export async function PUT(
     const updated = await prisma.project.update({
       where: { id },
       data: {
-        settings: updatedSettings
+        settings: updatedSettings,
+        ...(domain.customDomain && {
+          deploymentConfig: {
+            ...(project.deploymentConfig as any) || {},
+            customDomain: domain.customDomain
+          }
+        })
       }
     });
 

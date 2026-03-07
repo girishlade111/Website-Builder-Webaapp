@@ -1,4 +1,5 @@
-// API: Project Settings - Analytics
+// API: Project Analytics Settings
+// GET /api/projects/:id/settings/analytics - Get analytics settings
 // PUT /api/projects/:id/settings/analytics - Update analytics settings
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -39,6 +40,39 @@ const checkProjectAccess = async (projectId: string, userId: string) => {
   return null;
 };
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUser();
+    const { id } = await params;
+
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
+      return NextResponse.json(
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    const settings = (project.settings as any) || {};
+    const analytics = settings.analytics || {};
+
+    return NextResponse.json({
+      success: true,
+      data: analytics
+    });
+  } catch (error) {
+    console.error('Error fetching analytics settings:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch analytics settings' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -65,20 +99,18 @@ export async function PUT(
       );
     }
 
-    const existingSettings = (project.settings as any) || {};
+    const currentSettings = (project.settings as any) || {};
     const updatedSettings = {
-      ...existingSettings,
+      ...currentSettings,
       analytics: {
-        ...(existingSettings.analytics || {}),
+        ...(currentSettings.analytics || {}),
         ...analytics
       }
     };
 
     const updated = await prisma.project.update({
       where: { id },
-      data: {
-        settings: updatedSettings
-      }
+      data: { settings: updatedSettings }
     });
 
     return NextResponse.json({

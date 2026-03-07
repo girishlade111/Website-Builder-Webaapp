@@ -1,4 +1,4 @@
-// API: Installed Plugin - Update settings and Uninstall
+// API: Installed Plugin - Uninstall and Update Settings
 // PUT /api/projects/:id/plugins/:pluginId - Update plugin settings
 // DELETE /api/projects/:id/plugins/:pluginId - Uninstall plugin
 
@@ -59,40 +59,50 @@ export async function PUT(
       );
     }
 
-    if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
+    if (project.role !== 'OWNER' && project.role !== 'ADMIN' && project.role !== 'EDITOR') {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions' },
         { status: 403 }
       );
     }
 
-    const existing = await prisma.installedPlugin.findFirst({
+    const installedPlugin = await prisma.installedPlugin.updateMany({
       where: {
         projectId: id,
         pluginId
-      }
+      },
+      data: { settings }
     });
 
-    if (!existing) {
+    if (installedPlugin.count === 0) {
       return NextResponse.json(
-        { success: false, error: 'Plugin not installed' },
+        { success: false, error: 'Plugin not found' },
         { status: 404 }
       );
     }
 
-    const installed = await prisma.installedPlugin.update({
-      where: { id: existing.id },
-      data: {
-        settings: settings || {}
+    const updated = await prisma.installedPlugin.findFirst({
+      where: {
+        projectId: id,
+        pluginId
       },
       include: {
-        plugin: true
+        plugin: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            version: true,
+            type: true,
+            manifest: true
+          }
+        }
       }
     });
 
     return NextResponse.json({
       success: true,
-      data: installed,
+      data: updated,
       message: 'Plugin settings updated successfully'
     });
   } catch (error) {
@@ -128,30 +138,24 @@ export async function DELETE(
       );
     }
 
-    const existing = await prisma.installedPlugin.findFirst({
+    const result = await prisma.installedPlugin.deleteMany({
       where: {
         projectId: id,
         pluginId
       }
     });
 
-    if (!existing) {
+    if (result.count === 0) {
       return NextResponse.json(
         { success: false, error: 'Plugin not installed' },
         { status: 404 }
       );
     }
 
-    await prisma.installedPlugin.delete({
-      where: { id: existing.id }
-    });
-
     // Decrement plugin install count
     await prisma.plugin.update({
       where: { id: pluginId },
-      data: {
-        installs: { decrement: 1 }
-      }
+      data: { installs: { decrement: 1 } }
     });
 
     return NextResponse.json({

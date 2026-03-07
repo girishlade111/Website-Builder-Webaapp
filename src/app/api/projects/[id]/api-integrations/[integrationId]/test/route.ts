@@ -1,9 +1,9 @@
 // API: Test API Integration
-// POST /api/projects/[id]/api-integrations/[integrationId]/test - Test the API integration
+// POST /api/projects/:id/api-integrations/:integrationId/test - Test integration
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { executeApiRequest, getApiIntegration } from '@/lib/services/apiIntegration';
+import { executeApiRequest } from '@/lib/services/apiIntegration';
 
 const getCurrentUser = async () => {
   let user = await prisma.user.findFirst({
@@ -25,21 +25,19 @@ const getCurrentUser = async () => {
 const checkProjectAccess = async (projectId: string, userId: string) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { collaborations: true }
+    include: {
+      collaborations: {
+        where: { userId }
+      }
+    }
   });
 
-  if (!project) return { allowed: false, reason: 'Project not found' };
-
-  const isOwner = project.ownerId === userId;
-  const isCollaborator = project.collaborations.some(
-    c => c.userId === userId && c.acceptedAt !== null
-  );
-
-  if (!isOwner && !isCollaborator) {
-    return { allowed: false, reason: 'Access denied' };
+  if (!project) return null;
+  if (project.ownerId === userId) return { ...project, role: 'OWNER' as const };
+  if (project.collaborations.length > 0) {
+    return { ...project, role: project.collaborations[0].role };
   }
-
-  return { allowed: true };
+  return null;
 };
 
 export async function POST(
@@ -48,21 +46,25 @@ export async function POST(
 ) {
   try {
     const user = await getCurrentUser();
-    const { id: projectId, integrationId } = await params;
+    const { id, integrationId } = await params;
     const body = await request.json();
     const { testParams, testBody } = body || {};
 
-    // Check access
-    const access = await checkProjectAccess(projectId, user.id);
-    if (!access.allowed) {
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: access.reason },
-        { status: 403 }
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
       );
     }
 
-    // Get integration config
-    const integration = await getApiIntegration(projectId, integrationId);
+    const integration = await prisma.apiIntegration.findFirst({
+      where: {
+        id: integrationId,
+        projectId: id
+      }
+    });
 
     if (!integration) {
       return NextResponse.json(
@@ -72,36 +74,39 @@ export async function POST(
     }
 
     // Execute test request
-    const result = await executeApiRequest(integration, {
-      params: testParams,
-      body: testBody
-    });
+    const result = await executeApiRequest(
+      {
+        id: integration.id,
+        name: integration.name,
+        endpoint: integration.endpoint,
+        method: integration.method as any,
+        headers: integration.headers as Record<string, string>,
+        authType: integration.authType as any,
+        authConfig: integration.authConfig as any,
+        responseMapping: integration.responseMapping as any
+      },
+      {
+        params: testParams,
+        body: testBody
+      }
+    );
 
     return NextResponse.json({
       success: true,
       data: {
         request: {
-          url: integration.endpoint,
+          endpoint: integration.endpoint,
           method: integration.method,
-          headers: integration.headers
+          params: testParams,
+          body: testBody
         },
-        response: {
-          success: result.success,
-          status: result.status,
-          data: result.data,
-          error: result.error
-        }
-      },
-      message: result.success ? 'Test successful' : 'Test failed'
+        response: result
+      }
     });
-  } catch (error: any) {
-    console.error('Error testing API integration:', error);
+  } catch (error) {
+    console.error('Error testing integration:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to test API integration',
-        details: error.message
-      },
+      { success: false, error: 'Failed to test integration' },
       { status: 500 }
     );
   }

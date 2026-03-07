@@ -1,5 +1,5 @@
-import TemplateSelection from '@/templates/TemplateSelection';
+import { redirect } from 'next/navigation';
 
 export default function Home() {
-  return <TemplateSelection />;
+  redirect('/dashboard');
 }

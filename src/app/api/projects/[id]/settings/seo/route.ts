@@ -1,7 +1,6 @@
-// API: Project Settings - SEO, Domain, Analytics sub-routes
+// API: Project SEO Settings
+// GET /api/projects/:id/settings/seo - Get SEO settings
 // PUT /api/projects/:id/settings/seo - Update SEO settings
-// PUT /api/projects/:id/settings/domain - Update domain settings
-// PUT /api/projects/:id/settings/analytics - Update analytics settings
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -41,7 +40,39 @@ const checkProjectAccess = async (projectId: string, userId: string) => {
   return null;
 };
 
-// SEO Settings
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUser();
+    const { id } = await params;
+
+    const project = await checkProjectAccess(id, user.id);
+
+    if (!project) {
+      return NextResponse.json(
+        { success: false, error: 'Project not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    const settings = (project.settings as any) || {};
+    const seo = settings.seo || {};
+
+    return NextResponse.json({
+      success: true,
+      data: seo
+    });
+  } catch (error) {
+    console.error('Error fetching SEO settings:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch SEO settings' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -68,20 +99,18 @@ export async function PUT(
       );
     }
 
-    const existingSettings = (project.settings as any) || {};
+    const currentSettings = (project.settings as any) || {};
     const updatedSettings = {
-      ...existingSettings,
+      ...currentSettings,
       seo: {
-        ...(existingSettings.seo || {}),
+        ...(currentSettings.seo || {}),
         ...seo
       }
     };
 
     const updated = await prisma.project.update({
       where: { id },
-      data: {
-        settings: updatedSettings
-      }
+      data: { settings: updatedSettings }
     });
 
     return NextResponse.json({

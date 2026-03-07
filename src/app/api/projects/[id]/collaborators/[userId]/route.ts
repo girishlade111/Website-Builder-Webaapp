@@ -1,5 +1,5 @@
-// API: Collaborator by User ID - Update and Remove
-// PUT /api/projects/:id/collaborators/:userId - Update role
+// API: Collaborator by ID - Update role and Remove
+// PUT /api/projects/:id/collaborators/:userId - Update collaborator role
 // DELETE /api/projects/:id/collaborators/:userId - Remove collaborator
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -84,22 +84,41 @@ export async function PUT(
       );
     }
 
-    const collaboration = await prisma.collaboration.update({
+    const collaboration = await prisma.collaboration.updateMany({
       where: {
-        id: (await prisma.collaboration.findFirst({
-          where: {
-            projectId: id,
-            userId
-          },
-          select: { id: true }
-        }))?.id!
+        projectId: id,
+        userId
       },
       data: { role: role as any }
     });
 
+    if (collaboration.count === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Collaboration not found' },
+        { status: 404 }
+      );
+    }
+
+    const updated = await prisma.collaboration.findFirst({
+      where: {
+        projectId: id,
+        userId
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true
+          }
+        }
+      }
+    });
+
     return NextResponse.json({
       success: true,
-      data: collaboration,
+      data: updated,
       message: 'Role updated successfully'
     });
   } catch (error) {
@@ -147,28 +166,24 @@ export async function DELETE(
     // Cannot remove yourself
     if (userId === user.id) {
       return NextResponse.json(
-        { success: false, error: 'Cannot remove yourself' },
+        { success: false, error: 'Cannot remove yourself. Transfer ownership first.' },
         { status: 400 }
       );
     }
 
-    const existing = await prisma.collaboration.findFirst({
+    const result = await prisma.collaboration.deleteMany({
       where: {
         projectId: id,
         userId
       }
     });
 
-    if (!existing) {
+    if (result.count === 0) {
       return NextResponse.json(
         { success: false, error: 'Collaborator not found' },
         { status: 404 }
       );
     }
-
-    await prisma.collaboration.delete({
-      where: { id: existing.id }
-    });
 
     return NextResponse.json({
       success: true,

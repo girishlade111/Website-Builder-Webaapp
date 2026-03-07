@@ -1,8 +1,6 @@
-// API: Project Collaborators - List, Invite, Update, Remove
+// API: Project Collaborators - List and Invite
 // GET /api/projects/:id/collaborators - List all collaborators
-// POST /api/projects/:id/collaborators - Invite collaborator
-// PUT /api/projects/:id/collaborators/:userId - Update role
-// DELETE /api/projects/:id/collaborators/:userId - Remove collaborator
+// POST /api/projects/:id/collaborators - Invite new collaborator
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
@@ -70,10 +68,11 @@ export async function GET(
             image: true
           }
         }
-      }
+      },
+      orderBy: { invitedAt: 'desc' }
     });
 
-    // Include owner as a collaborator
+    // Include owner
     const owner = await prisma.user.findUnique({
       where: { id: project.ownerId },
       select: {
@@ -131,10 +130,10 @@ export async function POST(
       );
     }
 
-    // Only owner or admin can invite collaborators
+    // Only owner or admin can invite
     if (project.role !== 'OWNER' && project.role !== 'ADMIN') {
       return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
+        { success: false, error: 'Insufficient permissions to invite collaborators' },
         { status: 403 }
       );
     }
@@ -156,12 +155,12 @@ export async function POST(
     }
 
     // Find or create user
-    let targetUser = await prisma.user.findUnique({
+    let invitee = await prisma.user.findUnique({
       where: { email }
     });
 
-    if (!targetUser) {
-      targetUser = await prisma.user.create({
+    if (!invitee) {
+      invitee = await prisma.user.create({
         data: {
           email,
           name: email.split('@')[0]
@@ -173,7 +172,7 @@ export async function POST(
     const existing = await prisma.collaboration.findFirst({
       where: {
         projectId: id,
-        userId: targetUser.id
+        userId: invitee.id
       }
     });
 
@@ -184,21 +183,12 @@ export async function POST(
       );
     }
 
-    // Cannot invite owner
-    if (targetUser.id === project.ownerId) {
-      return NextResponse.json(
-        { success: false, error: 'User is already the project owner' },
-        { status: 400 }
-      );
-    }
-
     // Create collaboration
     const collaboration = await prisma.collaboration.create({
       data: {
         projectId: id,
-        userId: targetUser.id,
-        role: role as any,
-        invitedAt: new Date()
+        userId: invitee.id,
+        role: role as any
       },
       include: {
         user: {
@@ -211,6 +201,8 @@ export async function POST(
         }
       }
     });
+
+    // TODO: Send invitation email
 
     return NextResponse.json({
       success: true,
